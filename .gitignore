@@ -1,0 +1,25 @@
+# 运行时数据（真实运行日志与账本，不公开）
+*.jsonl
+*.log
+_learn.lock
+web-learn-state.json
+earn-state.json
+learn-summary.json
+pending-approvals*.json*
+permissions.json
+
+# 支付系统（含账号信息，不公开）
+scan-pay.cjs
+pay-scan.log
+
+# 本机环境相关（计划任务启动器）
+*.bat
+*.vbs
+
+# 产物与缓存
+productions/
+brain_data/
+cortex_data/
+organs-cells.json
+__pycache__/
+*.pyc
