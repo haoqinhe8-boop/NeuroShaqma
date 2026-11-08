@@ -132,12 +132,18 @@ xiaosha/
 git clone https://github.com/haoqinhe8-boop/NeuroShaqma.git
 cd NeuroShaqma          # ★ 一定要先进项目目录，python 找不到 demo.py 就是少了这步
 
-# 2. 一分钟体验：造脑（288,964×720）→ 看它放电 → 教它学导航 → 性能成绩单
+# 2. 装依赖（只有 numpy 一个，几秒钟）
+pip install -r requirements.txt
+#    Windows 不想敲命令的：直接双击 run-demo.bat（会自动装依赖并启动）
+
+# 3. 一分钟体验：造脑（288,964×720）→ 看它放电 → 教它学导航 → 性能成绩单
 python demo.py
 
-# 3. 规模扫描：你自己的电脑能跑多大？逐档计时给你看
+# 4. 规模扫描：你自己的电脑能跑多大？逐档计时给你看
 python bench.py
 ```
+
+报 `ModuleNotFoundError: No module named 'numpy'` 就是第 2 步没做。
 
 `demo.py` 会自动适应你的机器速度（学习部分按单局耗时自动调整练习量），跑完打印一张成绩单：神经元数、突触数、步进速度、学习提升、发放率，以及"这台电脑能跑多大"的结论。`bench.py` 扫描 2 万 → 6 万 → 13.9 万 → 28.9 万，输出「规模-速度-频率」对照表，你自己就能验证果蝇量级的实时性。
 
