@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Peter (NeuroShaqma / 小沙大脑). MIT License.
+# 原作者：Peter（上海宝山，12 岁）。使用/借鉴/修改请保留本署名。
 # GPU 脉冲皮层 benchmark（torch + fp16 权重优化）：测 13.9万 → 30万 → 50万 → 100万
 # 约束：只用 4090 空闲显存（~3.4GB），不碰 72B 主力。权重 fp16 省一半，累加 fp32 保精度。
 import torch, time, sys

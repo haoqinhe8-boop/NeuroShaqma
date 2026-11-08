@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Peter (NeuroShaqma / 小沙大脑). MIT License.
+# 原作者：Peter（上海宝山，12 岁）。使用/借鉴/修改请保留本署名。
 # -*- coding: utf-8 -*-
 """小沙类脑器官细胞统计 + 分区发放数据导出（2026-11-07）
 

@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Peter (NeuroShaqma / 小沙大脑). MIT License.
+# 原作者：Peter（上海宝山，12 岁）。使用/借鉴/修改请保留本署名。
 # -*- coding: utf-8 -*-
 """分区皮层 RegionCortex：把随机网络改造成有分工的脑区结构（2026-11-08）
 

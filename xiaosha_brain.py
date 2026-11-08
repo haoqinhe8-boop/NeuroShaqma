@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Peter (NeuroShaqma / 小沙大脑). MIT License.
+# 原作者：Peter（上海宝山，12 岁）。使用/借鉴/修改请保留本署名。
 # -*- coding: utf-8 -*-
 """
 小沙 / 沙琪玛 —— 唤醒-回应-定位-移动 闭环（纯 numpy 自研仿真，无需 PyBullet）

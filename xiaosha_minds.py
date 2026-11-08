@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Peter (NeuroShaqma / 小沙大脑). MIT License.
+# 原作者：Peter（上海宝山，12 岁）。使用/借鉴/修改请保留本署名。
 # -*- coding: utf-8 -*-
 """
 小沙多自我心智（2026-11-02）：决策前多个独立自我并行分析，主自我拍板。

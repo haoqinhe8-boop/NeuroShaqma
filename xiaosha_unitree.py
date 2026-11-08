@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Peter (NeuroShaqma / 小沙大脑). MIT License.
+# 原作者：Peter（上海宝山，12 岁）。使用/借鉴/修改请保留本署名。
 # -*- coding: utf-8 -*-
 """宇树机器人适配器（2026-11-08）：小沙大脑 → 宇树 Go2/H1 无缝衔接
 

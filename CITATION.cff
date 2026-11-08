@@ -1,0 +1,24 @@
+cff-version: 1.2.0
+message: "学习/使用本代码请引用此文件（原作者：Peter）"
+title: NeuroShaqma
+type: software
+authors:
+  - family-names: Peter
+    given-names: ""
+    alias: 小沙大脑作者
+    email: haoqinhe8@gmail.com
+    city: 上海市宝山区
+    country: CN
+abstract: >-
+  一个 12 岁初中生在家里用 2080Ti + 4090 做出的脉冲神经网络大脑：
+  288,964 神经元 x 720 突触（果蝇 2.07x / 4.16x），真实自主运行 49 天，
+  含蘑菇体条件反射与中央复合体导航回路，可无缝接入宇树/Microduck 机器人。
+keywords:
+  - spiking-neural-network
+  - neuromorphic
+  - robotics
+  - neuroscience
+license: MIT
+version: 1.0.0
+date-released: "2026-11-08"
+repository-code: "https://github.com/haoqinhe8-boop/NeuroShaqma"
