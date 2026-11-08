@@ -1,14 +1,14 @@
 @echo off
-rem NeuroShaqma 一键体验：双击即可（自动定位本目录 + 自动装依赖，不用 cd）
-rem 若 python 不在 PATH，把下面的 python 改成你电脑上 python.exe 的完整路径
+rem NeuroShaqma one-click demo: auto-locate itself and auto-install deps.
+rem If python is not in PATH, replace "python" below with the full path to python.exe
 chcp 65001 >nul
-echo [1/2] 检查依赖 numpy ...
+echo [1/2] Checking numpy ...
 python -c "import numpy" 2>nul
 if errorlevel 1 (
-    echo 未安装 numpy，正在自动安装 ...
+    echo numpy not found, installing via pip ...
     pip install -r "%~dp0requirements.txt"
 )
-echo [2/2] 开始一分钟体验：
+echo [2/2] Starting demo:
 echo.
 python -X utf8 "%~dp0demo.py"
 pause
