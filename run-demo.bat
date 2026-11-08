@@ -6,7 +6,8 @@ echo [1/2] Checking numpy ...
 python -c "import numpy" 2>nul
 if errorlevel 1 (
     echo numpy not found, installing via pip ...
-    pip install -r "%~dp0requirements.txt"
+    pip install -r "%~dp0requirements.txt" 2>nul
+    if errorlevel 1 pip install numpy
 )
 echo [2/2] Starting demo:
 echo.
