@@ -1,4 +1,6 @@
-# NeuroShaqma · 小沙大脑
+﻿# NeuroShaqma · 小沙大脑
+![stars](https://img.shields.io/github/stars/haoqinhe8-boop/NeuroShaqma?style=flat-square) ![license](https://img.shields.io/github/license/haoqinhe8-boop/NeuroShaqma?style=flat-square) [![讨论](https://img.shields.io/badge/discussions-有问题来聊-blue?style=flat-square)](https://github.com/haoqinhe8-boop/NeuroShaqma/discussions)
+
 
 > **我 12 岁。我在家里用一台游戏电脑，造出了一个比果蝇大脑更大的脉冲神经网络大脑——它有 2.08 亿个突触，真的会学习，还已经自己活了 49 天。**
 
@@ -123,6 +125,12 @@ xiaosha/
 └── export_organs_cells.py # 细胞统计与监控数据导出
 ```
 
+
+## 有问题 / 想交流？
+
+- [GitHub Discussions](https://github.com/haoqinhe8-boop/NeuroShaqma/discussions) —— 提问、交流、提建议（推荐，我在这回复你）
+- [提 Issue](https://github.com/haoqinhe8-boop/NeuroShaqma/issues) —— 报 Bug、要功能
+- 邮箱：haoqinhe8@gmail.com / 2731952033@qq.com
 ## 使用与署名
 
 **随意使用、借鉴、修改、商用**——只要遵守一条：**保留原作者署名**。
