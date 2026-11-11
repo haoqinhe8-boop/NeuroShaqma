@@ -111,6 +111,7 @@ An **event-driven Spiking Neural Network** that mimics a real brain: neurons sta
 5. **任务简单**：只验证了导航学习
 6. 测试有 pytest 入口，但偏"冒烟级"
 7. **Windows 专属**：Linux/macOS 未适配
+8. **缺工作记忆**：延迟匹配样本任务（DMS）实测学不会（练后 42% < 随机 50%）——当前架构没有持续保持信息的专门结构，这是下一步方向（慢时间常数神经元/记忆单元）
 
 ## 目录 / Structure
 

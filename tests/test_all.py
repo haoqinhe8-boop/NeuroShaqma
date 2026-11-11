@@ -24,6 +24,7 @@ MODULES = [
     ("xiaosha_cortex", 10, "脉冲皮层（28.9 万×720 + 学习）"),
     ("xiaosha_regions", 7, "分区皮层（7 脑区路由）"),
     ("xiaosha_teamwork", 6, "脑区分工合作（跨感官任务+对照+消融）"),
+    ("xiaosha_memory", 5, "工作记忆探测（如实记录：当前架构边界）"),
     ("xiaosha_circuits", 8, "果蝇招牌回路（蘑菇体+中央复合体）"),
     ("xiaosha_gpu", 5, "GPU 运行器（fp16 混合精度；无卡自动 SKIP）"),
 ]
