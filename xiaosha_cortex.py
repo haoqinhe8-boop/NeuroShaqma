@@ -81,7 +81,8 @@ class SpikingCortex:
                  in_deg=64, in_amp=0.9,
                  lr_stdp=0.012, elig_decay=0.92, target_rate=3.0,
                  homo_every=10, homo_lr=0.045, homo_max=2.8,
-                 lr_out=None, baseline_decay=0.97, anchor_lam=0.0, direct_in=True):
+                 lr_out=None, baseline_decay=0.97, anchor_lam=0.0, direct_in=True,
+                 slow_frac=0.0, slow_tau=0.200):
         self.n, self.k, self.dt = int(n), int(k), float(dt)
         self.n_in, self.n_feat, self.n_act = int(n_in), int(n_feat), int(n_act)
         # ★ 读出特征维度 = 组数。**别再想着"把特征分细一点"**：实测把 32 组提到 128 组
@@ -131,6 +132,13 @@ class SpikingCortex:
         self.ref = np.zeros(self.n, dtype=np.uint8)            # 不应期计数
         self.theta = np.full(self.n, v_th, dtype=np.float32)   # 自适应阈值
         self.decay = float(math.exp(-dt / tau_m))
+        # 慢时间常数神经元（前额叶持续放电）：slow_frac 比例的神经元用更长 tau_m，
+        # 膜电位衰减慢、能在延迟期保持活动（工作记忆的生理基础）。默认 0 = 不启用。
+        if slow_frac > 0:
+            self.decay_vec = np.full(self.n, self.decay, dtype=np.float32)
+            self.decay_vec[:int(self.n * slow_frac)] = float(math.exp(-dt / slow_tau))
+        else:
+            self.decay_vec = None
         self.v_reset, self.ref_steps = np.float32(v_reset), int(ref_steps)
 
         # ---- 可塑性 ----
@@ -198,8 +206,11 @@ class SpikingCortex:
         t0 = time.perf_counter()
         v, n = self.v, self.n
 
-        # ① 泄漏
-        v *= self.decay
+        # ① 泄漏（支持慢神经元：decay_vec 非空时向量乘）
+        if self.decay_vec is None:
+            v *= self.decay
+        else:
+            v *= self.decay_vec
 
         # ② 外部输入（事件驱动：只有输入神经元发放，直接往它的目标递送）
         if ext is None:
