@@ -1,8 +1,10 @@
-﻿# NeuroShaqma · 小沙大脑
+# NeuroShaqma · 小沙大脑 / Xiaosha Brain
+
 ![stars](https://img.shields.io/github/stars/haoqinhe8-boop/NeuroShaqma?style=flat-square) ![license](https://img.shields.io/github/license/haoqinhe8-boop/NeuroShaqma?style=flat-square) [![讨论](https://img.shields.io/badge/discussions-有问题来聊-blue?style=flat-square)](https://github.com/haoqinhe8-boop/NeuroShaqma/discussions)
 
-
 > **我 12 岁。我在家里用一台游戏电脑，造出了一个比果蝇大脑更大的脉冲神经网络大脑——它有 2.08 亿个突触，真的会学习，还已经自己活了 49 天。**
+>
+> **I'm 12. At home, on a gaming PC, I built a spiking neural network bigger than a fruit fly's brain — 208 million synapses, it really learns, and it's been alive for 49 days.**
 
 ![小沙大脑 vs 果蝇大脑](brain-vs-fly.png)
 
@@ -10,176 +12,183 @@
 
 上面这张动图是它真实仿真时的样子：每一个亮点都是一个神经元在发放脉冲。它平时 99% 的神经元是安静的，只有 0.3% 在放电——就像果蝇那样，用极少能量干很多事。
 
-## 作者
+*The GIF above is a real simulation: each dot is a neuron firing a spike. 99% of its neurons are quiet at any moment, only 0.3% fire — like a fly, doing a lot with very little energy.*
 
-**Peter**，来自上海市宝山区的一名 12 岁初中生。
+## 作者 / Author
 
-这个项目完全是在家里的台式机上完成的——没有实验室，没有服务器，没有团队。白天上学，晚上回家写代码。所有实验、所有数据，都跑在我家的两块家用显卡上：
+**Peter**，来自上海市宝山区的一名 12 岁初中生。这个项目完全是在家里的台式机上完成的——没有实验室，没有服务器，没有团队。白天上学，晚上回家写代码。
 
-- **NVIDIA RTX 2080 Ti（11GB）** —— 日常开发、跑 7B 语言模型
-- **NVIDIA RTX 4090（48GB）** —— 跑 72B 大模型和大脑的大规模仿真
+**Peter**, a 12-year-old middle-schooler from Baoshan District, Shanghai. Built entirely on a home PC — no lab, no server, no team.
 
-## 开发方式（诚实说明）
+- **NVIDIA RTX 2080 Ti（11GB）** —— 日常开发、跑 7B 语言模型 / daily dev, runs a 7B LLM
+- **NVIDIA RTX 4090（48GB）** —— 跑 72B 大模型和大脑的大规模仿真 / runs a 72B model and large-scale brain sims
 
-这个项目的**主力是 DeepSeek-V4-Pro**：绝大部分的代码编写、调试、实验设计和参数调整都由它完成。Peter 负责提出想法、拍板关键决策（大脑规模、器官结构、开发方向）并验收结果——但真正动手干活的主力是 DeepSeek-V4-Pro。所有实验、所有数字都是在真实机器上真实跑出来的，不是 AI 编的——每个数字都能用仓库里的 `demo.py`、`bench.py` 和 `--selftest` 自己验证。
+## 开发方式（诚实说明）/ How it was built (honest)
 
-## 这是什么
+这个项目的**主力是 DeepSeek-V4-Pro**：绝大部分的代码编写、调试、实验设计和参数调整都由它完成。Peter 负责提出想法、拍板关键决策并验收结果。所有数字都是在真实机器上真实跑出来的，不是 AI 编的——每个都能用 `demo.py`、`bench.py` 和 `--selftest` 自己验证。
 
-小沙大脑是一个**事件驱动的脉冲神经网络**（Spiking Neural Network），模仿真实大脑的工作方式：神经元平时安静，只有膜电位超过阈值时才发放一个脉冲（spike），信号以脉冲事件的形式在突触间传递。它不靠大矩阵乘法堆算力，而是靠**稀疏发放 + 事件驱动**——就像果蝇那样，用极少能量干很多事。
+**The main force is DeepSeek-V4-Pro**: most of the coding, debugging, experiment design and tuning. Peter sets the ideas, makes the key calls and checks the results. Every number was really run on real hardware — verify with `demo.py`, `bench.py` and `--selftest`.
 
-## 小沙大脑 vs 果蝇大脑
+## 这是什么 / What is this
 
-| 指标 | 小沙大脑 | 果蝇大脑 | 对比 |
+小沙大脑是一个**事件驱动的脉冲神经网络**（Spiking Neural Network），模仿真实大脑的工作方式：神经元平时安静，只有膜电位超过阈值时才发放一个脉冲（spike），信号以脉冲事件的形式在突触间传递。它不靠大矩阵乘法堆算力，而是靠**稀疏发放 + 事件驱动**。
+
+An **event-driven Spiking Neural Network** that mimics a real brain: neurons stay silent, fire a spike only when their membrane potential crosses a threshold, and signals travel as sparse spike events — not dense matrix math.
+
+## 小沙大脑 vs 果蝇大脑 / Xiaosha vs Fruit Fly
+
+| 指标 Metric | 小沙 Xiaosha | 果蝇 Fly | 对比 Ratio |
 |---|---|---|---|
-| 神经元数量 | **288,964** | 139,255 | **2.07×** |
-| 突触数量 | **208,054,080** | ~50,000,000 | **4.16×** |
-| 每神经元连接数 | 720 | ~360 | 2× |
-| 全系统细胞总数（皮层 + 小脑 + 脑干 + 脊髓 + 感觉/运动外周） | **3,985,964** | 139,255 | **28.6×** |
+| 神经元 Neurons | **288,964** | 139,255 | **2.07×** |
+| 突触 Synapses | **208,054,080** | ~50,000,000 | **4.16×** |
+| 每神经元连接 Connections/neuron | 720 | ~360 | 2× |
+| 全系统细胞 Total cells (皮层+小脑+脑干+脊髓+感觉/运动外周) | **3,985,964** | 139,255 | **28.6×** |
 
-> 果蝇数据参考：果蝇大脑约 139,255 个神经元、约 5,000 万突触（连接组学公开数据）。小沙大脑的 288,964 × 720 = 208,054,080 突触，在神经元数量上是果蝇的 2.07 倍，突触是 4.16 倍。
+> 果蝇数据参考：果蝇大脑约 139,255 个神经元、约 5,000 万突触（连接组学公开数据）。
+> *Fly reference: ~139,255 neurons and ~50M synapses (public connectome data).*
 
-## 能干什么（每个数字都是真跑出来的）
+## 能干什么 / What it can do（每个数字都是真跑出来的 / every number really ran）
 
-- **会学习**：脉冲时序依赖可塑性（R-STDP）——练完导航任务，成功率从出厂时的 33% 涨到 93%
-- **会自我调节**：稳态发放率调节 + E/I 平衡，神经元再多也不会"烧起来"（活跃度稳定在 0.28%）
-- **跑得动**：28.9 万神经元，CPU 上 20.7ms/步（48Hz，实时），4090 显卡上 7.26ms/步（138Hz）
-- **有身体**：耳朵真听（语音识别）、嘴巴真说（语音合成）、鼻子会闻（气味场定位）、脚会走（躯干自适应控制）、手会抓（机械臂指令）
-- **有内脏**：肺呼吸（网络吞吐）、心脏泵血（任务调度）、肝肠分类吸收数据、泌尿清理垃圾、免疫查 Bug、内分泌应激调节
+- **会学习 Learns**：R-STDP —— 练完导航任务，成功率从出厂 33% 涨到 93% / navigation success 33%→93%
+- **会自我调节 Self-regulates**：稳态发放率 + E/I 平衡，活跃度稳定 0.28% / homeostasis keeps firing at 0.28%
+- **跑得动 Fast**：28.9 万神经元 CPU 20.7ms/步（48Hz 实时）、4090 上 7.26ms/步（138Hz）
+- **有身体 Has a body**：耳听 / 嘴说 / 鼻闻 / 脚走 / 手抓（hears, speaks, smells, walks, grabs）
+- **有内脏 Has organs**：肺呼吸 / 心脏泵血 / 肝肠吸收 / 泌尿清理 / 免疫查 Bug / 内分泌调节
 
-## 实战记录（真跑出来的，不是演示）
+## 实战记录 / Real-world track record（真跑出来的 / really ran）
 
-小沙大脑不是只会在自检脚本里跑——它已经在这个家里真实自主运行了近两个月。以下数字全部来自运行日志，逐条可查。
+小沙已经在这个家里真实自主运行了近两个月。以下数字全部来自运行日志，逐条可查。
+*It has run autonomously at home for nearly two months. All numbers are from real logs.*
 
-### 1. 自主运行 49 天，5,171 个决策 0 失败
+### 1. 自主运行 49 天，5,171 个决策 0 失败 / 49 days, 5,171 decisions, 0 failures
 
-自 2026 年 9 月 19 日起，小沙自主体在真实环境里连续自主运行（计划任务每 10 分钟自动唤醒，无人值守）：
+自 2026-09-19 起连续自主运行（计划任务每 10 分钟唤醒，无人值守）：
 
-| 指标 | 数字 |
+| 指标 Metric | 数字 Value |
 |---|---|
-| 自主决策动作总数 | 5,171 |
-| 成功 / 失败 | 5,171 / 0（成功率 100%） |
-| 其中：自主内容产出 | 3,396 次 |
-| 话题池整理 | 1,741 次 |
-| 产品制作 | 18 次 |
-| 自主发起学习 | 13 次 |
+| 自主决策动作总数 Decisions | 5,171 |
+| 成功 / 失败 Success / Fail | 5,171 / 0（100%） |
+| 自主内容产出 Content produced | 3,396 次 |
+| 话题池整理 Topic curation | 1,741 次 |
+| 产品制作 Products made | 18 次 |
+| 自主发起学习 Self-initiated learning | 13 次 |
 
-### 2. 自学 26.6 万条知识（158MB）
+### 2. 自学 26.6 万条知识 / 266k items self-learned（158MB）
 
-- 知识库 266,381 条（158MB）——全部是它自己从网络上学来的（GitHub、arXiv、CSDN 等公开源），不是人工喂的
-- 学习日志 21,413 条
-- 自己维护的"话题池"34,587 个
+- 知识库 266,381 条（158MB），全是从网络自己学来的（GitHub/arXiv/CSDN 等公开源）
+- 学习日志 21,413 条 / learning log 21,413 entries
+- 自己维护的话题池 34,587 个 / 34,587 self-curated topics
 
-### 3. 自主产出与经营
+### 3. 自主产出与经营 / Autonomous production
 
-- 内容产出日志 59,040 条
-- 上架作品 4,252 件（"热点速读"等大众内容，定价 2.9 元/件，上架货值约 1.2 万元）
-- 支付扫码到账系统真实运行（截图 + OCR 识别金额入账）
+- 内容产出日志 59,040 条 / 59,040 production log entries
+- 上架作品 4,252 件（"热点速读"等，定价 2.9 元/件）/ 4,252 listed products
+- 支付扫码到账系统真实运行 / real QR-payment scan system
 
-### 4. 身体的真实闭环
+### 4. 身体的真实闭环 / Real body loop
 
-- **听觉与发声**："嘴巴说 → 耳朵听"闭环：语音合成一句话，再送进语音识别，一字不差听懂——它自己说给自己听，全链路真实跑通
-- **脚（躯干适配）**：6 种不同躯干（两轮差速、阿克曼、履带、三全向轮、四轮滑移、远程软件介质）全部开机自识别、自学出身体模型（雅可比误差 < 30%）、自己走到目标点——21/21 项自检通过
-- **手**：机械臂写字指令下发；真机接口为总线舵机驱动板
+- **听觉与发声**："嘴巴说 → 耳朵听"闭环，一字不差听懂 / speech→ASR loop, word-perfect
+- **脚（躯干适配）**：6 种躯干（两轮差速/阿克曼/履带/三全向/四轮滑移/远程介质）开机自识别、自学身体模型、自己走到目标——21/21 自检 / 6 bodies self-identified, 21/21
+- **手**：机械臂写字指令下发 / robotic-arm command
 
-### 5. 学习能力实测
+### 5. 学习能力实测 / Learning measured
 
-- 导航任务：出厂成功率 33% → 训练后 93%
-- 大规模学习（288,964 神经元 × 720 突触）：评估从 0/30 学到 25/30（83%）
+- 导航：出厂 33% → 训练后 93%
+- 大规模学习（288,964×720）：评估 0/30 → 25/30（83%）
 
-## 它和果蝇的区别（说实话）
+## 它和果蝇的区别（说实话）/ vs the fly, honestly
 
-**果蝇赢在**：几亿年进化，脑区结构精细到每个连接都有分工；小沙大脑的连接是随机稀疏的，结构上只有"从零到一"。
-**但现在"分工合作"已经不是空话了**——小沙做了跨感官分工任务并用行为学实验验证（`xiaosha_teamwork.py`，6/6 自检）：视觉区专职看、听觉区专职听、联合区整合、运动区执行。证据：①分区网络学会跨感官任务 2%→100%，同规模随机网络只到 78%（分工有真实收益）②消融实验——学完后遮住视觉通道，命中率从 100% 崩到 55%（视觉区真的在专职"看"）；遮听觉同理 ③全信息下全脑发放是单感官的 4.07 倍（脑区协同工作）。
-**小沙赢在**：数量和实时性追平甚至超过果蝇；而且它可以随时长大——把 N 改大就行，果蝇做不到。
+**果蝇赢在**：几亿年进化，脑区结构精细到每个连接都有分工。*The fly wins on evolution: every connection has a job.*
+**但"分工合作"已不是空话**：小沙做了跨感官分工任务并行为学验证（`xiaosha_teamwork.py`，6/6）：视觉区专职看、听觉区专职听、联合区整合、运动区执行。①分区网络学会 2%→100%，随机网络只到 78% ②消融实验——遮视觉命中率 100%→55%（视觉区专职看），遮听觉同理 ③全信息下全脑发放是单感官的 4.07 倍。*But "division of labour" is now proven: cross-modal task, region network 2%→100% vs random 78%, ablation shows vision/auditory regions are specialized.*
+**小沙赢在**：数量和实时性追平甚至超过果蝇；而且它可以随时长大。*Xiaosha wins on scale and realtime, and it can grow anytime.*
 
-## 不足点
+## 不足点 / Limitations
 
-1. **规模仍很小**：人脑约 860 亿神经元，小沙只有果蝇量级，离人脑还有 6 个数量级
-2. 结构已有分工：神经元按 7 个功能脑区组织（嗅球/视觉/听觉/语言/运动·脚/运动·手/其他皮层），器官输入真实路由（嗅刺激只激活嗅球、视刺激只激活视觉区），区内密集连接 + 区间前馈；**果蝇两大招牌回路已做**：蘑菇体（2,000 Kenyon 细胞稀疏编码 + 条件反射联想学习，8/8 自检）和中央复合体（32 单元环形吸引子方向积分，转 180° 误差 0.0°）——离"精细回路"仍有距离，但已不是一锅随机粥
-3. **学习仍在 CPU**：运行已支持 GPU（fp16 混合精度，28.9 万实测 91Hz，与 CPU 稳态行为一致偏差 14%），但 R-STDP 学习本身还在 CPU 上
-4. **器官部分是仿真**：嗅觉是气味场模型，真机传感器（MQ 气体传感器）接口留好了但还没接
-5. **任务简单**：目前只验证了导航学习，复杂任务（推理、语言、多任务切换）没测过
-6. 测试有 pytest 统一入口（`pip install pytest && pytest -v` 跑全部模块自检）；但偏"冒烟级"，没有细粒度单元测试
-7. **Windows 专属**：目前只在 Windows 上跑过，Linux/macOS 没适配
+1. **规模仍很小**：人脑约 860 亿神经元，小沙只有果蝇量级 / still fly-scale, ~6 orders of magnitude below the human brain
+2. 结构已有分工（7 脑区 + 蘑菇体条件反射 + 中央复合体导航），但离精细回路仍有距离
+3. **学习仍在 CPU**：运行已 GPU（fp16，实测 91Hz），R-STDP 学习本身还在 CPU
+4. **器官部分是仿真**：嗅觉是气味场模型，真机传感器接口留好未接
+5. **任务简单**：只验证了导航学习
+6. 测试有 pytest 入口，但偏"冒烟级"
+7. **Windows 专属**：Linux/macOS 未适配
 
-## 目录
+## 目录 / Structure
 
 ```
 xiaosha/
-├── README.md             # 项目说明（作者/数值/实战/思路/上手）
+├── README.md             # 项目说明 docs
 ├── LICENSE               # MIT
-├── demo.py               # 一分钟体验：造脑→放电→学习→成绩单
-├── bench.py              # 规模-速度扫描（你的电脑能跑多大）
-├── xiaosha_cortex.py     # 脉冲皮层：288,964 神经元 × 720 突触，R-STDP 学习
-├── xiaosha_neuro_v3.py   # 神经版大脑 v3：导航学习闭环
-├── xiaosha_brain_v2.py   # 大脑 v2：感知→决策→技能
-├── xiaosha_embodiment.py # 躯干适配：同一套大脑适配任意身体（6 种躯干）
-├── xiaosha_body.py       # 身体：耳听/嘴说/鼻闻/脚走/手抓
-├── xiaosha_organs.py     # 内脏：肺/心/肝/肠/胰/肾/脾等八大系统
-├── xiaosha_spine.py      # 脊椎：传感器故障检测定位
-├── xiaosha_immune.py     # 免疫：故障诊断治疗
-├── xiaosha_watchdog.py   # 看门狗：防死循环
-├── xiaosha_judge.py      # 判断器
-├── xiaosha_vision.py     # 视觉
-├── gpu_cortex_bench.py   # GPU 加速实验（4090 fp16 混合精度）
-└── export_organs_cells.py # 细胞统计与监控数据导出
+├── CITATION.cff          # 引用 cite this
+├── demo.py               # 一分钟体验 1-minute demo
+├── bench.py              # 规模-速度扫描 scale/speed bench
+├── xiaosha_cortex.py     # 脉冲皮层 SNN cortex (288,964×720, R-STDP)
+├── xiaosha_regions.py    # 分区皮层 7 brain regions
+├── xiaosha_teamwork.py   # 脑区分工合作 division of labour
+├── xiaosha_circuits.py   # 果蝇回路 mushroom body + central complex
+├── xiaosha_gpu.py        # GPU 运行器 fp16 runner
+├── xiaosha_embodiment.py # 躯干适配 body-agnostic control
+├── xiaosha_body.py       # 身体五感 5 senses
+├── xiaosha_organs.py     # 内脏八大系统 8 organ systems
+├── xiaosha_spine.py      # 脊椎 spine
+├── xiaosha_immune.py     # 免疫 immune
+├── xiaosha_watchdog.py   # 看门狗 watchdog
+├── xiaosha_judge.py      # 判断器 judge
+├── xiaosha_vision.py     # 视觉 vision
+└── xiaosha_unitree.py / xiaosha_microduck.py  # 宇树/Microduck 适配器 robot adapters
 ```
 
+## 有问题 / 想交流？ Questions?
 
-## 有问题 / 想交流？
+- [GitHub Discussions](https://github.com/haoqinhe8-boop/NeuroShaqma/discussions) —— 提问、交流、提建议（推荐，我在这回复你）/ ask and chat (I reply here)
+- [提 Issue](https://github.com/haoqinhe8-boop/NeuroShaqma/issues) —— 报 Bug、要功能 / bugs, feature requests
+- 邮箱 Email：haoqinhe8@gmail.com / 2731952033@qq.com
 
-- [GitHub Discussions](https://github.com/haoqinhe8-boop/NeuroShaqma/discussions) —— 提问、交流、提建议（推荐，我在这回复你）
-- [提 Issue](https://github.com/haoqinhe8-boop/NeuroShaqma/issues) —— 报 Bug、要功能
-- 邮箱：haoqinhe8@gmail.com / 2731952033@qq.com
-## 使用与署名
+## 使用与署名 / Use / Attribution
 
 **随意使用、借鉴、修改、商用**——只要遵守一条：**保留原作者署名**。
+**Free to use, copy, modify, sell** — just keep the author attribution.
 
-- 许可证：MIT（见 `LICENSE` 文件）——保留版权声明即可自由使用
-- 每个代码文件头部都有署名：`Copyright (c) 2026 Peter (NeuroShaqma)`
-- 写论文/报告引用本代码：用仓库里的 `CITATION.cff`（GitHub 会自动生成"Cite this repository"按钮，一键复制引用格式）
-- 原创者：Peter（上海市宝山区，12 岁）——发作品/转发时请带上名字和仓库链接
+- 许可证 License：MIT（见 `LICENSE`）——保留版权声明即可自由使用
+- 每个代码文件头部都有署名 / every source file carries: `Copyright (c) 2026 Peter (NeuroShaqma)`
+- 写论文引用用 `CITATION.cff`（GitHub 会自动生成"Cite this repository"按钮）
+- 原创者 Author：Peter（上海市宝山区，12 岁）——转发请带名字和仓库链接
 
-## 怎么跑（一分钟上手）
-
-光看数字没概念？先拿到代码，再两条命令直接体验：
+## 怎么跑（一分钟上手）/ Quick start (1 minute)
 
 ```bash
-# 1. 下载代码
+# 1. 下载代码 clone
 git clone https://github.com/haoqinhe8-boop/NeuroShaqma.git
-cd NeuroShaqma          # ★ 一定要先进项目目录，python 找不到 demo.py 就是少了这步
+cd NeuroShaqma          # ★ 一定要先进项目目录 / must cd in first
 
-# 2. 装依赖（只有 numpy 一个，几秒钟）
+# 2. 装依赖 install deps (only numpy)
 pip install -r requirements.txt
-#    Windows 不想敲命令的：直接双击 run-demo.bat（会自动装依赖并启动）
+#    Windows 不想敲命令：双击 run-demo.bat（自动装依赖并启动）
 
-# 3. 一分钟体验：造脑（288,964×720）→ 看它放电 → 教它学导航 → 性能成绩单
+# 3. 一分钟体验 1-minute demo: 造脑→放电→学习→成绩单
 python demo.py
 
-# 4. 规模扫描：你自己的电脑能跑多大？逐档计时给你看
+# 4. 规模扫描 scale scan
 python bench.py
 ```
 
-报 `ModuleNotFoundError: No module named 'numpy'` 就是第 2 步没做。
+报 `ModuleNotFoundError: No module named 'numpy'` 就是第 2 步没做 / = you skipped step 2.
 
-`demo.py` 会自动适应你的机器速度（学习部分按单局耗时自动调整练习量），跑完打印一张成绩单：神经元数、突触数、步进速度、学习提升、发放率，以及"这台电脑能跑多大"的结论。`bench.py` 扫描 2 万 → 6 万 → 13.9 万 → 28.9 万，输出「规模-速度-频率」对照表，你自己就能验证果蝇量级的实时性。
-
-自检（每个模块都有，跑完能看真实数字）：
+自检 Self-test（每个模块都有 / every module）:
 
 ```bash
-python xiaosha_cortex.py --selftest     # 皮层 10 项（含 28.9 万规模学习验证）
-python xiaosha_embodiment.py --selftest # 躯干适配 21 项（6 种躯干）
-python xiaosha_body.py --selftest       # 身体五感 5 项（嘴巴说→耳朵听闭环）
-python xiaosha_organs.py --selftest     # 内脏八大系统 6 项
+python xiaosha_cortex.py --selftest     # 皮层 cortex 10 项
+python xiaosha_embodiment.py --selftest # 躯干 body 21 项
+python xiaosha_body.py --selftest       # 五感 senses 5 项
+python xiaosha_organs.py --selftest     # 内脏 organs 6 项
 ```
 
-依赖：Python 3.9+，NumPy（身体自检的"耳朵"需要本机 8085 端口有语音识别服务，没有也不影响其它项）。
+依赖 Dependencies：Python 3.9+，NumPy。
 
-## 联系方式
+## 联系方式 / Contact
 
 - 📧 haoqinhe8@gmail.com
 - 📧 2731952033@qq.com
 
-欢迎交流，欢迎提 Issue，欢迎一起把它养大。
+欢迎交流，欢迎提 Issue，欢迎一起把它养大。*Welcome — chat, open issues, help it grow.*
 
-*—— Peter，上海市宝山区，2026 年 11 月*
+*—— Peter，上海市宝山区 / Baoshan, Shanghai · 2026 年 11 月*
