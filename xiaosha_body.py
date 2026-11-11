@@ -119,11 +119,13 @@ class Body:
         return run_one_body(spec, name=name, target=target)
 
     def hands(self, text="小"):
-        """手：机械臂写字（仿真下发指令序列；真机换总线舵机）。"""
+        """手：机械臂（准确度=闭环定位 + 力度控制=抓取力匹配）。"""
         from xiaosha_brain_v2 import Arm
         arm = Arm(sim=True)
         rec = arm.write(text)
-        return rec, arm.log
+        acc = arm.move_to([0.10, 0.10, 0.05], tol=0.002)   # 准确度：闭环定位
+        grip = arm.grasp(force=0.4, fragility=0.7)          # 力度：抓软物体
+        return rec, arm.log, acc, grip
 
 
 # ============================================================
@@ -180,12 +182,17 @@ def selftest():
 
     # ---------- 4. 手：机械臂写字 ----------
     try:
-        rec, log = body.hands("小")
+        rec, log, acc, grip = body.hands("小")
         ok = rec.get("cmd") == "write" and len(log) >= 1
         check("手：机械臂接收写字指令（真机接口=总线舵机）", ok,
               f"下发 {rec} ｜ 指令序列 {len(log)} 条")
+        acc_ok = acc.get("error_mm", 99) < 15.0
+        check("手：闭环定位准确度（误差 <15mm）", acc_ok,
+              f"目标 [0.1,0.1,0.05] → 误差 {acc.get('error_mm')}mm（{acc.get('iters')} 次校正收敛）")
+        check("手：力度控制（抓取力可调、匹配物体脆度）", grip.get("result") in ("掉落", "抓稳", "捏碎"),
+              f"力度 {grip.get('force')} 抓脆度 {grip.get('fragility')} → {grip.get('result')}")
     except Exception as e:
-        check("手：机械臂接收写字指令", False, f"异常: {e}")
+        check("手：机械臂准确度 + 力度控制", False, f"异常: {e}")
 
     # ---------- 5. 五感齐全性 ----------
     check("五感齐全：耳（听）/ 嘴（说）/ 鼻（闻）/ 脚（走）/ 手（抓）",

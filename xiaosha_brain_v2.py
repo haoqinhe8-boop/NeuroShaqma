@@ -710,15 +710,52 @@ class Arm:
     def __init__(self, sim=True):
         self.sim = sim
         self.log = []
+        self.pos = [0.0, 0.0, 0.0]   # 末端位置（米）
+        self.force = 0.0              # 当前抓取力（0~1 归一化）
+        self.gain = 0.8               # 闭环校正增益
+        self.noise = 0.008            # 每次运动定位噪声（米，8mm 高精度舵机）
 
     def _emit(self, cmd, **kw):
         rec = {"cmd": cmd, **kw}
         self.log.append(rec)
         return rec
 
-    def write(self, text):
+    def move_to(self, target, tol=0.002):
+        """闭环定位（准确度）：反复测量+校正直到误差 < tol。返回带误差 mm 和迭代数的记录。"""
+        tx, ty, tz = float(target[0]), float(target[1]), float(target[2])
+        x, y, z = self.pos
+        iters = 0
+        err = math.sqrt((tx - x) ** 2 + (ty - y) ** 2 + (tz - z) ** 2)
+        while err > tol and iters < 30:
+            x += self.gain * (tx - x) + random.uniform(-self.noise, self.noise)
+            y += self.gain * (ty - y) + random.uniform(-self.noise, self.noise)
+            z += self.gain * (tz - z) + random.uniform(-self.noise, self.noise)
+            err = math.sqrt((tx - x) ** 2 + (ty - y) ** 2 + (tz - z) ** 2)
+            iters += 1
+        self.pos = [x, y, z]
+        return self._emit("move_to", target=list(target), error_mm=round(err * 1000, 2), iters=iters)
+
+    def grasp(self, force=0.5, fragility=0.5):
+        """力度控制：力度匹配物体脆性。太轻掉落、太重捏碎、合适抓稳。"""
+        self.force = max(0.0, min(1.0, force))
+        limit = 0.3 + 0.6 * (1.0 - fragility)   # 越脆（fragility→1）能承受力度越小
+        if self.force < 0.15:
+            result = "掉落"
+        elif self.force > limit:
+            result = "捏碎"
+        else:
+            result = "抓稳"
+        return self._emit("grasp", force=round(self.force, 2), fragility=round(fragility, 2), result=result)
+
+    def set_force(self, force):
+        """设定抓取力度（0~1，越接近 1 越用力）。"""
+        self.force = max(0.0, min(1.0, force))
+        return self.force
+
+    def write(self, text, force=0.35):
         # 真机：把 6 轴目标位姿下发给总线舵机驱动板；写字靠位置回读，不能开环
-        return self._emit("write", text=text)
+        self.force = max(0.0, min(1.0, force))
+        return self._emit("write", text=text, force=round(self.force, 2))
 
     def clean_table(self):
         return self._emit("clean_table")

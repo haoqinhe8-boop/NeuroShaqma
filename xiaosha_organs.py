@@ -44,6 +44,22 @@ class Lung:
         self.url, self.timeout = air_url, timeout
         self.total_in = 0          # 累计吸入（字节）
         self.breaths = 0
+        # 提升（2026-11）：呼吸节律 + 肺活量 + 深度控制
+        self.rate = 12.0           # 呼吸频率（次/分，静息 ~12，活动可加快）
+        self.depth = "normal"      # shallow / normal / deep
+        self.depth_factor = {"shallow": 0.5, "normal": 1.0, "deep": 1.8}
+        self.vital_capacity = 0.0  # 肺活量 = 记录到的最大单次有效吸入（字节）
+
+    def set_depth(self, depth):
+        """呼吸深度：shallow 浅 / normal 正常 / deep 深。越深单次吸入越多。"""
+        if depth in self.depth_factor:
+            self.depth = depth
+        return self.depth
+
+    def set_rate(self, rate):
+        """呼吸频率（次/分）：活动时加快（如 20~30），静息 12 左右。"""
+        self.rate = max(1.0, min(60.0, rate))
+        return self.rate
 
     def breathe(self):
         try:
@@ -51,12 +67,17 @@ class Lung:
                 data = r.read()
         except Exception:
             return 0.0
-        self.total_in += len(data)
+        effective = float(len(data)) * self.depth_factor[self.depth]   # 深度控制有效吸入
+        self.total_in += effective
         self.breaths += 1
-        return float(len(data))
+        self.vital_capacity = max(self.vital_capacity, effective)     # 肺活量 = 历史最大
+        return float(effective)
 
     def volume(self):
-        return self.total_in / 1024.0   # KB
+        return self.total_in / 1024.0   # KB 累计通气量
+
+    def capacity(self):
+        return self.vital_capacity / 1024.0   # KB 肺活量
 
 
 class Bronchi:
@@ -308,6 +329,16 @@ def selftest():
     check("呼吸：肺真实吸入网络空气（HTTP 字节）+ 支气管 3 路并行",
           v1 > 0 and sum(branches) > 0,
           f"肺单次吸入 {v1/1024:.1f}KB ｜ 支气管 {len(branches)} 路并行合计 {sum(branches)/1024:.1f}KB")
+    # 深度控制：浅/正常/深呼吸吸入量递增
+    o.lung.set_depth("shallow"); s = o.lung.breathe()
+    o.lung.set_depth("normal");  n = o.lung.breathe()
+    o.lung.set_depth("deep");    d = o.lung.breathe()
+    check("呼吸深度控制：浅 < 正常 < 深呼吸（吸入量递增）", s < n < d,
+          f"浅 {s/1024:.1f}KB < 正常 {n/1024:.1f}KB < 深 {d/1024:.1f}KB")
+    o.lung.set_rate(24)
+    check("呼吸节律 + 肺活量：频率可调、肺活量=历史最大吸入",
+          o.lung.rate == 24 and o.lung.capacity() > 0,
+          f"频率 {o.lung.rate:.0f}次/分 ｜ 肺活量 {o.lung.capacity():.1f}KB")
 
     # ---------- 2. 消化闭环：吃 → 肝分类 → 肠复查 → 胰腺吸收 → 泌尿排泄 ----------
     feed = [
