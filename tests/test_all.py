@@ -26,6 +26,7 @@ MODULES = [
     ("xiaosha_teamwork", 6, "脑区分工合作（跨感官任务+对照+消融）"),
     ("xiaosha_memory", 5, "工作记忆探测（如实记录：当前架构边界）"),
     ("xiaosha_multitask", 3, "多任务探测（如实记录：交替训练灾难性遗忘）"),
+    ("xiaosha_hippocampus", 4, "海马体记忆重放（防灾难性遗忘，55%→82%）"),
     ("xiaosha_circuits", 8, "果蝇招牌回路（蘑菇体+中央复合体）"),
     ("xiaosha_gpu", 5, "GPU 运行器（fp16 混合精度；无卡自动 SKIP）"),
 ]
