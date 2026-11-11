@@ -82,7 +82,7 @@ class SpikingCortex:
                  lr_stdp=0.012, elig_decay=0.92, target_rate=3.0,
                  homo_every=10, homo_lr=0.045, homo_max=2.8,
                  lr_out=None, baseline_decay=0.97, anchor_lam=0.0, direct_in=True,
-                 slow_frac=0.0, slow_tau=0.200, slow_attractor=False, attractor_strength=0.15):
+                 slow_frac=0.0, slow_tau=0.200, slow_attractor=False, attractor_strength=0.15, attractor_groups=2):
         self.n, self.k, self.dt = int(n), int(k), float(dt)
         self.n_in, self.n_feat, self.n_act = int(n_in), int(n_feat), int(n_act)
         # ★ 读出特征维度 = 组数。**别再想着"把特征分细一点"**：实测把 32 组提到 128 组
@@ -127,6 +127,7 @@ class SpikingCortex:
         self.in_w = (in_amp * (0.7 + 0.6 * rng.random((self.n_in, int(in_deg))))
                      ).astype(np.float32)
 
+
         # ---- 状态 ----
         self.v = np.zeros(self.n, dtype=np.float32)            # 膜电位
         self.ref = np.zeros(self.n, dtype=np.uint8)            # 不应期计数
@@ -143,6 +144,15 @@ class SpikingCortex:
             self.n_slow = 0
         self.slow_attractor = bool(slow_attractor) and self.n_slow > 0
         self.attractor_strength = float(attractor_strength)
+        self.attractor_groups = max(2, int(attractor_groups))
+        # ★ 分群吸引子的选择性输入路由：前 G 个输入通道分别只连到对应组的慢神经元，
+        #   让线索选择性激活对应组（工作记忆的"选择性"来源，Wang 2001 前额叶模型）。
+        if self.slow_attractor:
+            gsz = max(1, self.n_slow // self.attractor_groups)
+            for g in range(min(self.attractor_groups, self.n_in)):
+                lo, hi = g * gsz, min((g + 1) * gsz, self.n_slow)
+                self.in_tgt[g] = rng.integers(lo, hi, size=self.in_tgt.shape[1], dtype=np.int32)
+
         self.v_reset, self.ref_steps = np.float32(v_reset), int(ref_steps)
 
         # ---- 可塑性 ----
@@ -251,9 +261,18 @@ class SpikingCortex:
             # ⑤b 慢神经元互兴奋（探索性：全互兴奋是非选择性的，实测未解决工作记忆
             #    ——真正解法是分群吸引子+侧抑制+选择性输入路由，见 README 不足点）
             if self.slow_attractor:
-                ns_sp = int(np.count_nonzero(sp < self.n_slow))
-                if ns_sp:
-                    v[:self.n_slow] += self.attractor_strength * (ns_sp / self.n_slow)
+                # 分群吸引子 + 侧抑制（Wang 2001）：组内互兴奋自持、组间抑制竞争，
+                # 让被线索激活的那一组持续放电、另一组被压下去（选择性工作记忆）。
+                gsz = max(1, self.n_slow // self.attractor_groups)
+                for g in range(self.attractor_groups):
+                    lo, hi = g * gsz, min((g + 1) * gsz, self.n_slow)
+                    g_sp = int(np.count_nonzero((sp >= lo) & (sp < hi)))
+                    if g_sp:
+                        v[lo:hi] += self.attractor_strength * (g_sp / max(1, hi - lo))
+                        for g2 in range(self.attractor_groups):
+                            if g2 != g:
+                                lo2, hi2 = g2 * gsz, min((g2 + 1) * gsz, self.n_slow)
+                                v[lo2:hi2] -= self.attractor_strength * 0.8 * (g_sp / max(1, hi - lo))
             # ⑥ STDP 迹（只碰发放的行）
             self.t_post[sp] = 1.0
             # 发放那一刻把该行的资格迹写成"当时的后膜迹"，惰性尺度负责之后的衰减
