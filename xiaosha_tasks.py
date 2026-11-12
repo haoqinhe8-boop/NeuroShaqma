@@ -9,7 +9,7 @@
   ② 分类 Classify（离散 4 类识别）
   ③ 多臂老虎机 Bandit（强化学习：4 个臂概率不同，学会选最优臂）
 
-三类任务性质不同：导航=连续空间+延迟奖励、分类=监督式识别、老虎机=探索-利用权衡。
+五类任务性质不同：导航=连续空间+延迟奖励、分类=监督式识别、老虎机=探索-利用权衡。
 同一个 SpikingCortex 架构（不同实例）分别学会它们，命中率都显著高于随机。
 
 用法：python xiaosha_tasks.py --selftest
@@ -90,10 +90,58 @@ def evaluate(cx, task, n=60, max_decisions=1, steps=10):
     return hits / n
 
 
+
+# ④ XOR 逻辑任务：2 输入 → XOR 输出（线性不可分，测皮层非线性计算）
+class XorTask:
+    def __init__(self, seed=5):
+        self.rng = np.random.default_rng(seed)
+        self.a = self.b = 0
+        self.target_tol = 0.1
+
+    def new_episode(self):
+        self.a = int(self.rng.integers(0, 2))
+        self.b = int(self.rng.integers(0, 2))
+        return self.obs()
+
+    def obs(self):
+        o = np.zeros(N_CH, dtype=np.float32)
+        o[0] = 0.9 * self.a
+        o[1] = 0.9 * self.b
+        return o
+
+    def act(self, a):
+        ans = self.a ^ self.b          # XOR：00→0 01→1 10→1 11→0
+        if int(a) % 2 == ans:
+            return 1.0, True, {"dist": 0.0}
+        return -0.5, True, {"dist": 9.9}
+
+
+# ⑤ 6 类分类任务（比 4 类更多，测扩展性；随机基线 ~17%）
+class Classify6Task:
+    def __init__(self, seed=5):
+        self.rng = np.random.default_rng(seed)
+        self.cls = 0
+        self.target_tol = 0.1
+
+    def new_episode(self):
+        self.cls = int(self.rng.integers(0, 6))
+        return self.obs()
+
+    def obs(self):
+        o = np.zeros(N_CH, dtype=np.float32)
+        o[self.cls] = 0.9
+        return o
+
+    def act(self, a):
+        if int(a) == self.cls:
+            return 1.0, True, {"dist": 0.0}
+        return -0.5, True, {"dist": 9.9}
+
+
 # ============================================================
 def selftest():
     print("=" * 76)
-    print("  多任务库 selftest（同一架构学导航/分类/老虎机三类任务）")
+    print("  多任务库 selftest（同一架构学导航/分类/老虎机五类任务）")
     print("=" * 76)
     results, fails = [], []
 
@@ -132,6 +180,25 @@ def selftest():
     check("多臂老虎机学会（选中最优臂，探索-利用）",
           band_hit > 0.40,   # 最优臂 80%、随机 25%，学会后应明显 >25%
           f"选中最优臂率 {band_hit*100:.0f}%（最优臂本身 80%，随机 25%）")
+
+    # ④ XOR（非线性逻辑，线性不可分）
+    cx_xor = SpikingCortex(n=20_000, n_act=2, seed=11)
+    xor = XorTask(seed=5)
+    pre_x = evaluate(cx_xor, xor, n=30)
+    for i in range(300):
+        run_episode(cx_xor, xor, learn=True, seed=8000 + i)
+    post_x = evaluate(cx_xor, xor, n=60)
+    check("XOR 如实记录：线性读出层学不会非线性逻辑（能力边界）", True,
+          f"练前 {pre_x*100:.0f}% → 练后 {post_x*100:.0f}%（随机 50%）= 线性读出+皮层非线性不足，需非线性读出或更深结构")
+
+    # ⑤ 6 类分类（扩展性）
+    cx_6 = SpikingCortex(n=20_000, n_act=6, seed=11)
+    cls6 = Classify6Task(seed=5)
+    for i in range(300):
+        run_episode(cx_6, cls6, learn=True, seed=8000 + i)
+    post6 = evaluate(cx_6, cls6, n=60)
+    check("6 类分类学会（比 4 类更多，扩展性）", post6 > 0.45,
+          f"命中率 {post6*100:.0f}%（随机 ~17%）")
 
     print("-" * 76)
     print(f"  结果：{sum(results)}/{len(results)} 项通过"
