@@ -28,6 +28,7 @@ MODULES = [
     ("xiaosha_multitask", 3, "多任务探测（如实记录：交替训练灾难性遗忘）"),
     ("xiaosha_hippocampus", 4, "海马体记忆重放（防灾难性遗忘，55%→82%）"),
     ("xiaosha_physiology", 16, "人体生理增强（13器官健康机制，排除衰老退化）"),
+    ("xiaosha_tasks", 3, "多任务库（导航/分类/老虎机，通用学习器）"),
     ("xiaosha_circuits", 8, "果蝇招牌回路（蘑菇体+中央复合体）"),
     ("xiaosha_gpu", 5, "GPU 运行器（fp16 混合精度；无卡自动 SKIP）"),
 ]
