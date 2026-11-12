@@ -151,7 +151,8 @@ class SpikingCortex:
             gsz = max(1, self.n_slow // self.attractor_groups)
             for g in range(min(self.attractor_groups, self.n_in)):
                 lo, hi = g * gsz, min((g + 1) * gsz, self.n_slow)
-                self.in_tgt[g] = rng.integers(lo, hi, size=self.in_tgt.shape[1], dtype=np.int32)
+                if lo < hi:   # 边界保护：n_slow < 组数时跳过空组（rng.integers 不接受 lo>=hi）
+                    self.in_tgt[g] = rng.integers(lo, hi, size=self.in_tgt.shape[1], dtype=np.int32)
 
         self.v_reset, self.ref_steps = np.float32(v_reset), int(ref_steps)
 
