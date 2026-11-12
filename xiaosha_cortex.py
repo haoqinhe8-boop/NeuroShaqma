@@ -82,7 +82,7 @@ class SpikingCortex:
                  lr_stdp=0.012, elig_decay=0.92, target_rate=3.0,
                  homo_every=10, homo_lr=0.045, homo_max=2.8,
                  lr_out=None, baseline_decay=0.97, anchor_lam=0.0, direct_in=True,
-                 slow_frac=0.0, slow_tau=0.200, slow_attractor=False, attractor_strength=0.15, attractor_groups=2):
+                 slow_frac=0.0, slow_tau=0.200, slow_attractor=False, attractor_strength=0.15, attractor_groups=2, nonlinear_out=False):
         self.n, self.k, self.dt = int(n), int(k), float(dt)
         self.n_in, self.n_feat, self.n_act = int(n_in), int(n_feat), int(n_act)
         # ★ 读出特征维度 = 组数。**别再想着"把特征分细一点"**：实测把 32 组提到 128 组
@@ -94,6 +94,10 @@ class SpikingCortex:
         #   1~2 个类（独立测试 14%）。加直通后读出面才看得见原始输入（储备池计算的标准做法）。
         self.direct_in = bool(direct_in)
         self.n_xf = self.n_feat + (self.n_in if self.direct_in else 0)
+        self.nonlinear_out = bool(nonlinear_out)
+        if self.nonlinear_out:
+            self.n_cross = self.n_in * (self.n_in - 1) // 2
+            self.n_xf += self.n_cross   # 交叉项（输入两两乘积 A*B），线性 W_out 可表示二次交互（XOR 可学）
         self._last_ext = np.zeros(self.n_in, dtype=np.float32)
         rng = np.random.default_rng(seed)
         self.rng = rng
@@ -320,6 +324,17 @@ class SpikingCortex:
         xf = np.clip((rate - self.feat_mu) / np.sqrt(self.feat_var + 1e-6), -5.0, 5.0)
         self._xf = (np.concatenate([xf, self._last_ext * 4.0 - 2.0]).astype(np.float32)
                     if self.direct_in else xf.astype(np.float32))
+        if self.nonlinear_out:
+            # 非线性读出：拼接交叉项（输入两两乘积 A*B）。实测：皮层 SNN 非线性已足够表示 XOR，
+            # 交叉项无额外增益（保留作可选特性，默认关闭）。
+            ext = self._last_ext
+            cross = np.zeros(self.n_cross, dtype=np.float32)
+            k = 0
+            for i in range(self.n_in):
+                for j in range(i + 1, self.n_in):
+                    cross[k] = ext[i] * ext[j]
+                    k += 1
+            self._xf = np.concatenate([self._xf, cross])
         return self.W_out @ self._xf + self.b_out
 
     def decide(self, temp=1.0, sample=False):
