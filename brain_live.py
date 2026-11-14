@@ -20,7 +20,7 @@ import time
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import numpy as np
-from xiaosha_cortex import SpikingCortex
+from xiaosha_structured import StructuredCortex, REGIONS
 
 # ---------------- 配置 ----------------
 N = 288964            # 真实神经元规模
@@ -41,42 +41,12 @@ REGIONS = [
 REGION_W = [0.42, 0.13, 0.12, 0.11, 0.11, 0.11]
 
 
-def build_layout():
-    """生成神经元 2D 位置（脑区团簇），保存为二进制供前端使用。"""
-    if os.path.exists(LAYOUT):
-        return np.fromfile(LAYOUT, dtype=np.float32).reshape(-1, 3)
+def build_layout(cx):
+    """从结构化皮层导出**真实**布局：脑区位置 + 层结构（不再是虚构团簇）。"""
+    layout = np.column_stack([cx.xy, cx.region_id.astype(np.float32)]).astype(np.float32)
+    layout.tofile(LAYOUT)
+    return layout
 
-    rng = np.random.RandomState(SEED)
-    n_per = [int(N * w) for w in REGION_W]
-    n_per[-1] = N - sum(n_per[:-1])
-
-    xs, ys, rs = [], [], []
-    for i, ((cx, cy, sx, sy, rot, _), nn) in enumerate(zip(REGIONS, n_per)):
-        th = rot
-        got = 0
-        gx, gy = [], []
-        while got < nn:
-            batch = min(nn - got + 4000, 60000)
-            x = rng.normal(0, sx, batch)
-            y = rng.normal(0, sy, batch)
-            mask = (x / (sx * 1.9)) ** 2 + (y / (sy * 1.9)) ** 2 < 1
-            x, y = x[mask], y[mask]
-            take = min(len(x), nn - got)
-            if take <= 0:
-                continue
-            x, y = x[:take], y[:take]
-            gx.append(x * np.cos(th) - y * np.sin(th) + cx)
-            gy.append(x * np.sin(th) + y * np.cos(th) + cy)
-            got += take
-        xs.append(np.concatenate(gx)); ys.append(np.concatenate(gy))
-        rs.append(np.full(nn, i, dtype=np.float32))
-
-    arr = np.stack([np.concatenate(xs), np.concatenate(ys), np.concatenate(rs)], axis=1).astype(np.float32)
-    arr.tofile(LAYOUT)
-    return arr
-
-
-TARGET_RATE = 0.003   # 目标放电率 0.3%（约 867 个/步）——视觉"繁星点点"且不糊
 
 def make_input(t):
     """感觉输入波形（结构：双通道扫动 + 周期事件 + 稀疏噪声）。
@@ -96,31 +66,22 @@ def make_input(t):
 
 
 def main():
-    layout = build_layout()
-    print(json.dumps({"type": "ready", "n": N,
-                      "msg": "layout ready"}), flush=True)
-
-    sys.stderr.write("[brain-live] 构造 %d 神经元...\n" % N)
-    cx = SpikingCortex(n=N, seed=SEED)
-    sys.stderr.write("[brain-live] 构造完成，开始直播\n")
+    sys.stderr.write("[brain-live] 构造结构化皮层 %d 神经元（6 脑区 x 3 层 x E/I）...\n" % N)
+    cx = StructuredCortex(total=N, seed=SEED)
+    layout = build_layout(cx)
+    sys.stderr.write("[brain-live] 构造完成: %s 突触，开始直播\n" % f"{cx.n_syn:,}")
+    print(json.dumps({"type": "ready", "n": N, "syn": cx.n_syn,
+                      "regions": [r[0] for r in REGIONS]}), flush=True)
 
     t = 0
     t_start = time.time()
     last_push = 0.0
-    gain = 0.12          # 输入增益（AGC 自动调节；从低处起，避免开局冲高爆炸）
+    # 注意：StructuredCortex 内建自适应阈值（稳态），不需要外层 AGC
     while True:
-        obs = make_input(t) * gain
+        obs = make_input(t)
         cx.step(obs)
         t += 1
         sp = cx._last_spike_ids
-        n_now = int(sp.size)
-        rate_now = n_now / N
-        # ---- AGC：闭环把放电率锁在 TARGET_RATE（否则会爆炸或静息）----
-        if rate_now > TARGET_RATE * 1.4:
-            gain *= 0.90
-        elif rate_now < TARGET_RATE * 0.6:
-            gain *= 1.05
-        gain = float(np.clip(gain, 0.02, 2.5))
         now = time.time()
         if (t % PUSH_EVERY == 0) and (now - last_push) > 0.02:  # 最多 50 帧/秒
             last_push = now
@@ -128,11 +89,9 @@ def main():
             if idx.size > MAX_SPIKES_SENT:
                 sel = np.random.choice(idx.size, MAX_SPIKES_SENT, replace=False)
                 idx = idx[sel]
-            # 各脑区活跃数
-            regions = layout[:, 2]
-            reg_counts = []
-            for r in range(len(REGIONS)):
-                reg_counts.append(int(np.count_nonzero(regions[sp] == r)) if sp.size else 0)
+            # 各脑区活跃数（真实脑区：V1/V2/IT/PFC/M1/HP）
+            rid_of_sp = cx.region_id[sp] if sp.size else np.zeros(0, dtype=np.int8)
+            reg_counts = [int(np.count_nonzero(rid_of_sp == r)) for r in range(len(REGIONS))]
             out = {
                 "t": t,
                 "n": int(sp.size),

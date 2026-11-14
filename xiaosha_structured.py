@@ -191,7 +191,7 @@ class StructuredCortex:
                         s = np.repeat(E23, k)
                         d = E23[self.rng.randint(0, E23.size, s.size)]
                         keep = s != d
-                        add(s[keep], d[keep], 0.020, 1)
+                        add(s[keep], d[keep], 0.007, 1)
                     # E→I：前馈兴奋（强，每 E 连 30 个 I）
                     if I23.size > 10:
                         s = np.repeat(E23, 30)
@@ -201,12 +201,12 @@ class StructuredCortex:
                     if E23.size > 100:
                         s = np.repeat(I23, 100)
                         d = E23[self.rng.randint(0, E23.size, s.size)]
-                        add(s, d, -0.180, 3)
+                        add(s, d, -0.400, 3)
                     # I→I：抑制性互抑
                     if I23.size > 10:
                         s = np.repeat(I23, 20)
                         d = I23[self.rng.randint(0, I23.size, s.size)]
-                        add(s, d, -0.100, 3)
+                        add(s, d, -0.220, 3)
 
         # ---- B. 层间微回路（L4 → L23 → L5，标准皮层方向）----
         for r in range(len(REGIONS)):
@@ -291,12 +291,18 @@ class StructuredCortex:
 
         # 发放
         sp = np.flatnonzero(v >= self.theta)
-        # 稳态调节：把全脑活跃率维持在 0.5%~3%（否则要么连锁爆炸要么熄灭）
+        # 代谢约束：每步发放不超过 2% 神经元（真实大脑受能量限制，这比缓慢的阈值反馈稳定）
+        # 光靠阈值慢速反馈会振荡（实测 20%→0%→0.04% 来回摆），硬限流 + 温和阈值才是稳的
+        max_n = max(1, int(self.total * 0.02))
+        if sp.size > max_n:
+            keep = np.argpartition(v[sp], -max_n)[-max_n:]
+            sp = np.sort(sp[keep])
+        # 温和的稳态调节（让阈值跟着活动水平缓慢漂移，辅助而非主控）
         rate_now = sp.size / self.total
-        if rate_now > 0.03:
-            self.theta = min(8.0, self.theta * 1.03)
-        elif rate_now < 0.005:
-            self.theta = max(self._theta0 * 0.5, self.theta * 0.995)
+        if rate_now > 0.015:
+            self.theta = min(12.0, self.theta * 1.02)
+        elif rate_now < 0.002:
+            self.theta = max(self._theta0 * 0.6, self.theta * 0.995)
         self._last_spike_ids = sp
         if sp.size:
             # 事件驱动：只处理发放神经元的下游（用 ptr 切片）

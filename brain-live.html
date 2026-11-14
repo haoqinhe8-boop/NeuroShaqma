@@ -69,7 +69,7 @@
     <div class="overlay">
       <div class="brand">NEUROSHAQMA · LIVE</div>
       <div class="title">小沙大脑 · 实时监控</div>
-      <div class="sub">288,964 个脉冲神经元 · 每一帧都是真实仿真</div>
+      <div class="sub">288,964 神经元 · 6 脑区 × 3 层 × E/I · 5627 万规则突触</div>
     </div>
     <div class="live"><span class="dot" id="dot"></span><span id="liveTxt">连接中</span></div>
     <div id="loading"><div><div class="spin"></div><div class="t" id="loadTxt">正在加载 288,964 个神经元…</div></div></div>
@@ -98,7 +98,8 @@
 (function(){
   const N_EXPECT = 288964;
   const REGIONS = [
-    {name:"皮层"},{name:"前额叶"},{name:"顶叶"},{name:"颞叶"},{name:"枕叶"},{name:"小脑"}
+    {name:"V1 视觉初级"},{name:"V2 视觉次级"},{name:"IT 下颞·物体"},
+    {name:"PFC 前额·工作记忆"},{name:"M1 运动"},{name:"HP 海马·记忆"}
   ];
   const COLORS = ["77,208,225","94,234,212","56,189,248","129,140,248","96,165,250","34,211,238"];
 
