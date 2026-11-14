@@ -26,6 +26,7 @@ MODULES = [
     ("xiaosha_teamwork", 6, "脑区分工合作（跨感官任务+对照+消融）"),
     ("xiaosha_neuromod", 4, "神经调质（DA学习率扫描: lr.0255→82%±0% 最稳, lr.066→61%崩）"),
     ("xiaosha_sleep", 4, "睡眠巩固（SHY: 负结果, A 55%→18% 如实记录）"),
+    ("xiaosha_experiments", 4, "experiments/ 健康检查（9脚本语法/import/无副作用/main保护/INVALID标注）"),
     ("xiaosha_gated", 5, "门控多头多任务（A=100%/B=95%，对比共享单头 A78%/B45%）"),
     ("xiaosha_continual", 5, "持续学习（任务后锚定：λ=3 把旧任务30%→82%，但新任务受限——如实记录）"),
     ("xiaosha_force", 5, "FORCE工作记忆（DMS 48.7%±2.6% → 100%±0.0%，长延迟600ms仍100%）"),
