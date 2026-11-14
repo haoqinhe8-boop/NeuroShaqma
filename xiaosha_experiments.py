@@ -15,6 +15,7 @@
 import ast
 import glob
 import importlib
+import subprocess
 import os
 import sys
 
@@ -84,6 +85,29 @@ def selftest():
             open(v1, encoding="utf-8").read())) or ""
     print("  [4] 失效结论已标注 INVALID%s" % ("" if marked else " —— 缺少警告"))
     ok += int(bool(marked))
+
+    # 5) 边界冒烟：带 ROUNDS 环境变量的脚本在极小轮数下不能崩
+    #    （教训：exp_structure_vs_random.py 曾在 ROUNDS<EVAL_EVERY 时 IndexError）
+    total += 1
+    edge_bad = []
+    for f in files:
+        src = open(f, encoding="utf-8").read()
+        if "os.environ.get('ROUNDS'" not in src:
+            continue
+        env = dict(os.environ)
+        env["ROUNDS"] = "30"
+        try:
+            r = subprocess.run([sys.executable, "-X", "utf8", f],
+                               capture_output=True, text=True, encoding="utf-8",
+                               errors="replace", cwd=EXP, env=env, timeout=180)
+            if r.returncode != 0:
+                edge_bad.append("%s(exit=%d)" % (os.path.basename(f), r.returncode))
+            elif "Traceback" in (r.stderr or ""):
+                edge_bad.append("%s(traceback)" % os.path.basename(f))
+        except subprocess.TimeoutExpired:
+            edge_bad.append("%s(超时)" % os.path.basename(f))
+    print("  [5] 边界冒烟(ROUNDS=30)%s" % ("" if not edge_bad else " —— 失败: " + ", ".join(edge_bad)))
+    ok += int(not edge_bad)
 
     print("  [信息] 共 %d 个实验脚本: %s" % (len(files), ", ".join(names)))
     print("  结果：%d/%d 项通过" % (ok, total))
