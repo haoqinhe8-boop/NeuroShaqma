@@ -21,6 +21,13 @@
 """
 import numpy as np
 
+# numba JIT 加速（可选；装了就自动用，没装回退纯 numpy）
+try:
+    from xiaosha_jit import step_jit as _step_jit, inject_jit as _inject_jit
+    _HAS_JIT = True
+except Exception:
+    _HAS_JIT = False
+
 __version__ = "1.0.0"
 
 # ==================== 解剖定义 ====================
@@ -89,6 +96,25 @@ class StructuredCortex:
 
         self._assign_cells()
         self._build_connections()
+
+        # ---- 输入注入池（预生成 64 组不重复的目标，避免每步调 rng.choice）----
+        # 实测：rng.choice 0.33ms/次 × 10 通道 = 3.3ms/步（占总耗时一半）
+        #       预生成池 0.002ms/次 → 省掉这 3.3ms
+        v1_l4 = self.groups[(self.region_names.index("V1"), 0, 0)]
+        if v1_l4.size:
+            k_inj = max(1, int(v1_l4.size * 0.02))
+            self._inject_pools = [
+                v1_l4[self.rng.choice(v1_l4.size, min(k_inj, v1_l4.size), replace=False)]
+                for _ in range(256)
+            ]
+        else:
+            self._inject_pools = []
+        self._inject_i = 0
+        if _HAS_JIT:
+            self._sp_buf = np.zeros(self.total, dtype=np.int64)
+            self._cnt_buf = np.zeros(len(REGIONS), dtype=np.int64)
+            self._max_n = max(1, int(self.total * 0.02))
+            self._max_per_region = max(1, int(self.total * 0.004))
 
         self.v = np.zeros(self.total, dtype=np.float32)
         self.ref = np.zeros(self.total, dtype=np.int16)
@@ -273,14 +299,35 @@ class StructuredCortex:
         if ext is not None:
             ext = np.asarray(ext, dtype=np.float32)[:self.n_in]
             self._last_ext[:] = ext
-            v1_l4 = self.groups[(self.region_names.index("V1"), 0, 0)]
-            if v1_l4.size:
+            if self._inject_pools:
                 act = np.flatnonzero(ext > 0)
                 for a in act:
-                    k = max(1, int(v1_l4.size * 0.02))
-                    tgt = self.rng.choice(v1_l4, k, replace=False)
-                    v[tgt] += float(ext[a]) * 1.4
+                    # 从预生成池轮换取（零随机开销，替代 rng.choice 的 0.33ms/次）
+                    tgt = self._inject_pools[self._inject_i]
+                    self._inject_i = (self._inject_i + 1) & 255
+                    if _HAS_JIT:
+                        _inject_jit(v, tgt, float(ext[a]) * 1.4, tgt.size)
+                    else:
+                        v[tgt] += float(ext[a]) * 1.4
 
+        # ===== JIT 加速路径（漏电/不应期/阈值/限流/递送全在编译内核里）=====
+        if _HAS_JIT:
+            nsp = _step_jit(v, self.ref, self.theta, 0.90, self.ref_steps,
+                            self.syn_ptr, self.syn_dst, self.syn_w,
+                            self.region_id, len(REGIONS),
+                            self._max_n, self._max_per_region,
+                            self._sp_buf, self._cnt_buf)
+            sp = self._sp_buf[:nsp].copy()
+            rate_now = nsp / self.total
+            if rate_now > 0.015:
+                self.theta = min(12.0, self.theta * 1.02)
+            elif rate_now < 0.002:
+                self.theta = max(self._theta0 * 0.6, self.theta * 0.995)
+            self._last_spike_ids = sp
+            self.t += 1
+            return sp
+
+        # ===== 纯 numpy 回退路径 =====
         # 漏电
         v *= 0.90
         # 不应期

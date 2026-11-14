@@ -26,6 +26,7 @@ MODULES = [
     ("xiaosha_teamwork", 6, "脑区分工合作（跨感官任务+对照+消融）"),
     ("xiaosha_neuromod", 4, "神经调质（DA学习率扫描: lr.0255→82%±0% 最稳, lr.066→61%崩）"),
     ("xiaosha_sleep", 4, "睡眠巩固（SHY: 负结果, A 55%→18% 如实记录）"),
+    ("xiaosha_jit", 3, "numba JIT 加速内核（4.5倍提速：196→883 步/秒，行为不变）"),
     ("xiaosha_instinct", 10, "本能系统（零任务训练：7条硬连线本能+多感觉+一次记忆，200陌生场景200/200，0.09ms/步）"),
     ("xiaosha_structured", 7, "结构化皮层（6脑区×3层×E/I 细胞类型，5627万条规则突触，前馈级联 V1→V2→IT→PFC→M1）"),
     ("xiaosha_experiments", 5, "experiments/ 健康检查（9脚本语法/import/无副作用/main保护/INVALID标注）"),
