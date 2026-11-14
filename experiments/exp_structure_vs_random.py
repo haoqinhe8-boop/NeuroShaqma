@@ -109,6 +109,12 @@ def run_one(kind, seed=11, verbose=True):
             curve.append(((rd + 1), acc))
             if verbose:
                 print("  %-11s 轮 %4d → %.0f%%  (%.0fs)" % (kind, rd + 1, acc * 100, time.time() - t0), flush=True)
+    # 边界：轮数少于 EVAL_EVERY 时曲线为空，补一次评估（防止下游 curve[-1] 崩）
+    if not curve:
+        acc = evaluate(cx, W, rng, 40, region=pool_region)
+        curve.append((N_ROUNDS, acc))
+        if verbose:
+            print("  %-11s 轮 %4d → %.0f%%  (%.0fs) [补充评估]" % (kind, N_ROUNDS, acc * 100, time.time() - t0), flush=True)
     return curve, time.time() - t0
 
 
