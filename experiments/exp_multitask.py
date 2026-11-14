@@ -1,14 +1,11 @@
 # -*- coding: utf-8 -*-
-"""实验：让一个网络同时学会两个冲突任务，需要什么条件？
+"""实验：一个网络同时学会两个冲突任务，需要什么条件？
 
-对照已知：
-  只学A → A98%/B0%；只学B → A0%/B100%；先A后B(λ=0) → A32%/B18%（都废）
-诊断假设：单一 W_out 无法表示"同输入不同输出"，除非网络能用某种「任务上下文」条件化。
-
-实验矩阵：
-  E1 原任务(TAG: A=0, B=0.9) + 交替训练
-  E2 双向TAG(TAG: A=-0.9, B=+0.9) + 交替训练   ← 关键改进：TAG 始终有信息
-  E3 双向TAG + 更长训练
+本次实测结论：
+  E1 原TAG(A=0,B=0.9) 交替400轮 → A=55% B=45%
+  E2 双向TAG 400轮              → A=55% B=75%
+  E3 双向TAG 800轮              → A=40% B=100%   ← recency bias
+  E4 双向TAG n=2万 400轮        → A=55% B=72%
 """
 import sys, os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -19,11 +16,13 @@ from xiaosha_hippocampus import N_CH, TAG, run_episode, evaluate, ClassifyTask
 
 
 class BiTagTask:
-    """双向 TAG：A 用 -0.9，B 用 +0.9（原版 A=0 时 TAG 无信息，网络会忽略它）"""
+    """双向 TAG：A=-0.9 / B=+0.9（原版 A=0 时 TAG 无信息，网络会忽略它）"""
+
     def __init__(self, seed=5, task_id=0):
         self.rng = np.random.default_rng(seed)
         self.task_id = task_id
         self.cls = 0
+        self.target_tol = 0.1
 
     def new_episode(self):
         self.cls = int(self.rng.integers(0, 4))
@@ -44,47 +43,40 @@ class BiTagTask:
         return -0.5, True, {"dist": 9.9}
 
 
-def eval_bi(cx, task_id, TaskCls, n=40):
-    t = TaskCls(seed=5, task_id=task_id)
-    hits = 0
-    for i in range(n):
-        r = run_episode(cx, t, learn=False, max_decisions=1, steps=10, seed=5000 + i)
-        hits += int(r["hit"])
-    return hits / n
+def eval_bi(cx, task_id, n=40):
+    t = BiTagTask(seed=5, task_id=task_id)
+    return sum(int(run_episode(cx, t, learn=False, max_decisions=1, steps=10,
+                               seed=5000 + i)["hit"]) for i in range(n)) / n
 
 
 def train_alternating(cx, rounds, TaskCls, seed=9000):
     tA, tB = TaskCls(seed=5, task_id=0), TaskCls(seed=5, task_id=1)
     for i in range(rounds):
-        t = tA if i % 2 == 0 else tB
-        run_episode(cx, t, learn=True, max_decisions=1, steps=10, seed=seed + i)
+        run_episode(cx, tA if i % 2 == 0 else tB, learn=True,
+                    max_decisions=1, steps=10, seed=seed + i)
 
 
-print("=" * 66)
-print("实验：一个网络如何同时学会两个冲突任务")
-print("=" * 66)
+def main():
+    print("=" * 66)
+    print("实验：一个网络如何同时学会两个冲突任务")
+    print("=" * 66)
 
-# E1: 原任务 + 交替
-cx = SpikingCortex(n=6000, seed=11)
-train_alternating(cx, 400, ClassifyTask)
-print("E1 原TAG(A=0,B=.9) 交替400轮 → A=%.0f%%  B=%.0f%%"
-      % (evaluate(cx, 0, 40)*100, evaluate(cx, 1, 40)*100))
+    cx = SpikingCortex(n=6000, seed=11)
+    train_alternating(cx, 400, ClassifyTask)
+    print("E1 原TAG(A=0,B=.9) 400轮 → A=%.0f%%  B=%.0f%%"
+          % (evaluate(cx, 0, 40) * 100, evaluate(cx, 1, 40) * 100))
 
-# E2: 双向 TAG + 交替
-cx2 = SpikingCortex(n=6000, seed=11)
-train_alternating(cx2, 400, BiTagTask)
-a2, b2 = eval_bi(cx2, 0, BiTagTask), eval_bi(cx2, 1, BiTagTask)
-print("E2 双向TAG 交替400轮       → A=%.0f%%  B=%.0f%%" % (a2*100, b2*100))
+    for label, rounds, n, seed in [
+        ("E2 双向TAG 400轮", 400, 6000, 9000),
+        ("E3 双向TAG 800轮", 800, 6000, 20000),
+        ("E4 双向TAG 2万/400轮", 400, 20000, 9000),
+    ]:
+        cx = SpikingCortex(n=n, seed=11)
+        train_alternating(cx, rounds, BiTagTask, seed=seed)
+        print("%-22s → A=%.0f%%  B=%.0f%%"
+              % (label, eval_bi(cx, 0) * 100, eval_bi(cx, 1) * 100))
+    print("=" * 66)
 
-# E3: 双向 TAG + 更长
-cx3 = SpikingCortex(n=6000, seed=11)
-train_alternating(cx3, 800, BiTagTask, seed=20000)
-a3, b3 = eval_bi(cx3, 0, BiTagTask), eval_bi(cx3, 1, BiTagTask)
-print("E3 双向TAG 交替800轮       → A=%.0f%%  B=%.0f%%" % (a3*100, b3*100))
 
-# E4: 双向 TAG + 更大网络
-cx4 = SpikingCortex(n=20000, seed=11)
-train_alternating(cx4, 400, BiTagTask)
-a4, b4 = eval_bi(cx4, 0, BiTagTask), eval_bi(cx4, 1, BiTagTask)
-print("E4 双向TAG n=2万 400轮     → A=%.0f%%  B=%.0f%%" % (a4*100, b4*100))
-print("=" * 66)
+if __name__ == "__main__":
+    main()
