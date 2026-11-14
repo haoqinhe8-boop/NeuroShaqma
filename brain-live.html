@@ -1,0 +1,345 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<title>小沙大脑 · 实时监控 | NeuroShaqma LIVE</title>
+<style>
+  *{margin:0;padding:0;box-sizing:border-box}
+  html,body{height:100%;overflow:hidden}
+  body{background:#05080c;color:#e6edf3;font-family:-apple-system,"PingFang SC","Microsoft YaHei",sans-serif}
+  #app{display:flex;height:100%}
+  #stage{flex:1;position:relative;overflow:hidden;
+         background:radial-gradient(ellipse 70% 60% at 50% 48%,#0a141d 0%,#060b11 45%,#04070a 100%)}
+  #bg,#glow,#fx{position:absolute;inset:0;width:100%;height:100%}
+  #glow{filter:blur(6px) saturate(1.15);opacity:.85;mix-blend-mode:screen}
+  #fx{pointer-events:none}
+  #vig{position:absolute;inset:0;pointer-events:none;
+       background:radial-gradient(ellipse 72% 68% at 50% 46%,transparent 42%,rgba(2,4,7,.72) 100%)}
+  .overlay{position:absolute;left:26px;top:22px;z-index:4}
+  .brand{font-size:11px;letter-spacing:.18em;color:#4285f4;font-weight:600}
+  .title{font-size:1.4rem;font-weight:600;margin-top:5px;letter-spacing:-.015em}
+  .sub{font-size:.76rem;color:#4e5a66;margin-top:4px}
+  .live{position:absolute;right:24px;top:24px;z-index:4;display:flex;align-items:center;gap:7px;
+        background:rgba(10,16,22,.72);border:1px solid #17202b;border-radius:20px;padding:6px 14px;
+        font-size:.75rem;backdrop-filter:blur(8px)}
+  .dot{width:6px;height:6px;border-radius:50%;background:#3fb950;box-shadow:0 0 10px #3fb950;animation:pulse 1.5s infinite}
+  .dot.off{background:#f85149;box-shadow:0 0 10px #f85149;animation:none}
+  @keyframes pulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.4;transform:scale(.85)}}
+  #panel{width:320px;background:#080d13;border-left:1px solid #131b24;padding:24px 20px;overflow-y:auto}
+  #panel h3{font-size:.68rem;letter-spacing:.16em;color:#4e5a66;font-weight:600;margin:20px 0 11px}
+  #panel h3:first-child{margin-top:0}
+  .big{font-size:2.4rem;font-weight:600;letter-spacing:-.035em;line-height:1.02;color:#5eead4;
+       font-variant-numeric:tabular-nums;text-shadow:0 0 22px rgba(94,234,212,.28)}
+  .big small{font-size:.8rem;color:#4e5a66;font-weight:400;margin-left:6px;letter-spacing:0}
+  .row{display:flex;justify-content:space-between;align-items:baseline;padding:8px 0;
+       border-bottom:1px solid #0f161e;font-size:.82rem}
+  .row .k{color:#6e7a86}
+  .row .v{color:#dbe4ec;font-variant-numeric:tabular-nums;font-weight:500}
+  .reg{margin:8px 0}
+  .reg .t{display:flex;justify-content:space-between;font-size:.76rem;color:#7d8996;margin-bottom:4px}
+  .reg .bar{height:3px;background:#0e1620;border-radius:2px;overflow:hidden}
+  .reg .bar i{display:block;height:100%;border-radius:2px;width:0;
+              background:linear-gradient(90deg,rgba(26,115,232,.8),#4dd0e1);
+              transition:width .15s linear;box-shadow:0 0 8px rgba(77,208,225,.4)}
+  .hint{margin-top:22px;padding:12px 14px;background:#0a1219;border:1px solid #131d27;
+        border-radius:8px;font-size:.72rem;color:#5f6b78;line-height:1.7}
+  .hint b{color:#8b949e}
+  #loading{position:absolute;inset:0;display:grid;place-items:center;z-index:6;background:#05080c}
+  #loading .t{color:#5f6b78;font-size:.84rem;text-align:center;line-height:2.1}
+  .spin{width:24px;height:24px;border:2px solid #131b24;border-top-color:#4285f4;border-radius:50%;
+        margin:0 auto 16px;animation:spin .9s linear infinite}
+  @keyframes spin{to{transform:rotate(360deg)}}
+  @media(max-width:760px){
+    #app{flex-direction:column}
+    #panel{width:100%;height:44%;border-left:none;border-top:1px solid #131b24;padding:16px}
+    #stage{height:56%}
+    .big{font-size:1.8rem}
+    .title{font-size:1.05rem}
+  }
+</style>
+</head>
+<body>
+<div id="app">
+  <div id="stage">
+    <canvas id="glow"></canvas>
+    <canvas id="bg"></canvas>
+    <canvas id="fx"></canvas>
+    <div id="vig"></div>
+    <div class="overlay">
+      <div class="brand">NEUROSHAQMA · LIVE</div>
+      <div class="title">小沙大脑 · 实时监控</div>
+      <div class="sub">288,964 个脉冲神经元 · 每一帧都是真实仿真</div>
+    </div>
+    <div class="live"><span class="dot" id="dot"></span><span id="liveTxt">连接中</span></div>
+    <div id="loading"><div><div class="spin"></div><div class="t" id="loadTxt">正在加载 288,964 个神经元…</div></div></div>
+  </div>
+
+  <div id="panel">
+    <h3>此刻正在放电</h3>
+    <div class="big"><span id="nActive">0</span><small>个神经元</small></div>
+    <div class="row"><span class="k">放电率</span><span class="v" id="rate">—</span></div>
+    <div class="row"><span class="k">仿真步数</span><span class="v" id="steps">—</span></div>
+    <div class="row"><span class="k">已连续运行</span><span class="v" id="uptime">—</span></div>
+    <div class="row"><span class="k">突触总数</span><span class="v">208,054,080</span></div>
+
+    <h3>各脑区活动</h3>
+    <div id="regions"></div>
+
+    <div class="hint">
+      <b>这是真直播，不是录像。</b><br>
+      Python 端持续跑 288,964 神经元的脉冲仿真，每个亮起的点都是这一刻真实发放的神经元。<br><br>
+      关掉页面，大脑还在跑；再打开，接着看。
+    </div>
+  </div>
+</div>
+
+<script>
+(function(){
+  const N_EXPECT = 288964;
+  const REGIONS = [
+    {name:"皮层"},{name:"前额叶"},{name:"顶叶"},{name:"颞叶"},{name:"枕叶"},{name:"小脑"}
+  ];
+  const COLORS = ["77,208,225","94,234,212","56,189,248","129,140,248","96,165,250","34,211,238"];
+
+  const bg = document.getElementById('bg'), fx = document.getElementById('fx'), gl = document.getElementById('glow');
+  const bctx = bg.getContext('2d'), fctx = fx.getContext('2d'), gctx = gl.getContext('2d');
+  let W=0,H=0, layout=null, depth=null, scale=1, ox=0, oy=0;
+
+  function computeMap(){
+    scale = Math.min(W/2.95, H/2.65) * 0.94;
+    ox = W/2; oy = H/2;
+  }
+  const px = x => ox + x*scale;
+  const py = y => oy - y*scale;
+
+  // 伪深度（稳定，按索引哈希）——用于大小/亮度分层，制造立体感
+  function makeDepth(n){
+    const d = new Float32Array(n);
+    let s = 12345;
+    for(let i=0;i<n;i++){
+      s = (s * 1103515245 + 12345) & 0x7fffffff;
+      d[i] = (s % 1000) / 1000;
+    }
+    return d;
+  }
+
+  function drawStatic(){
+    // ---------- 1) 光晕层：1/3 分辨率画所有点，放大后天然模糊 = 有体积感 ----------
+    const gw = Math.max(1, Math.floor(W/3)), gh = Math.max(1, Math.floor(H/3));
+    gl.width = gw; gl.height = gh;
+    gctx.fillStyle = '#05080c'; gctx.fillRect(0,0,gw,gh);
+    const gimg = gctx.createImageData(gw, gh);
+    const gd = gimg.data;
+    const ks = 1/3;
+    for(let i=0;i<layout.length;i+=3){
+      const X = (px(layout[i]))*ks, Y = (py(layout[i+1]))*ks;
+      if(X<0||X>=gw||Y<0||Y>=gh) continue;
+      const r = layout[i+2]|0, c = COLORS[r]||COLORS[0];
+      const k = ((Y|0)*gw + (X|0))*4;
+      const parts = c.split(',');
+      if(gd[k] < 200){
+        gd[k]   = Math.min(255, gd[k]  + parts[0]*0.55);
+        gd[k+1] = Math.min(255, gd[k+1]+ parts[1]*0.55);
+        gd[k+2] = Math.min(255, gd[k+2]+ parts[2]*0.55);
+        gd[k+3] = 255;
+      }
+    }
+    gctx.putImageData(gimg, 0, 0);
+
+    // ---------- 2) 清晰层：按深度分三层（远暗小 / 中 / 近亮大） ----------
+    const dimg = bctx.createImageData(W, H);
+    const dd = dimg.data;
+    for(let i=0,j=0;i<layout.length;i+=3,j+=1){
+      const X = px(layout[i]), Y = py(layout[i+1]);
+      if(X<0||X>=W||Y<0||Y>=H) continue;
+      const r = layout[i+2]|0, c = COLORS[r]||COLORS[0];
+      const z = depth[j];
+      let a, rad;
+      if(z < 0.62){ a = 0.10; rad = 0; }          // 远：几乎不留清晰点（只靠光晕）
+      else if(z < 0.88){ a = 0.20; rad = 0; }     // 中
+      else { a = 0.42; rad = 1; }                 // 近：稍大
+      const parts = c.split(',');
+      const cx = X|0, cy = Y|0;
+      const k = (cy*W + cx)*4;
+      dd[k]   = Math.max(dd[k],   parts[0]*a);
+      dd[k+1] = Math.max(dd[k+1], parts[1]*a);
+      dd[k+2] = Math.max(dd[k+2], parts[2]*a);
+      dd[k+3] = Math.max(dd[k+3], 255*a);
+      if(rad){ // 近处点扩一像素，有"实心"感
+        for(const [dx,dy] of [[1,0],[-1,0],[0,1],[0,-1]]){
+          const xx=cx+dx, yy=cy+dy;
+          if(xx<0||xx>=W||yy<0||yy>=H) continue;
+          const k2 = (yy*W+xx)*4;
+          dd[k2]   = Math.max(dd[k2],   parts[0]*a*0.5);
+          dd[k2+1] = Math.max(dd[k2+1], parts[1]*a*0.5);
+          dd[k2+2] = Math.max(dd[k2+2], parts[2]*a*0.5);
+          dd[k2+3] = Math.max(dd[k2+3], 255*a*0.5);
+        }
+      }
+    }
+    bctx.putImageData(dimg, 0, 0);
+
+    // ---------- 3) 神经纤维：随机近邻之间的极淡连线（"网络感"而非"散点"） ----------
+    bctx.save();
+    bctx.globalCompositeOperation = 'lighter';
+    bctx.lineWidth = 0.4;
+    const N = layout.length/3;
+    const FIBERS = Math.min(9000, Math.floor(N/32));
+    // 网格分桶，找近邻
+    const G = 40, gw2 = Math.ceil(W/G), gh2 = Math.ceil(H/G);
+    const buckets = new Map();
+    for(let j=0;j<N;j+=7){  // 抽样建桶（省时间）
+      const X = px(layout[j*3]), Y = py(layout[j*3+1]);
+      if(X<0||X>=W||Y<0||Y>=H) continue;
+      const key = ((Y/G)|0)*gw2 + ((X/G)|0);
+      if(!buckets.has(key)) buckets.set(key, []);
+      const arr = buckets.get(key);
+      if(arr.length < 12) arr.push(j);
+    }
+    const keys = Array.from(buckets.keys());
+    let drawn = 0;
+    for(let f=0; f<FIBERS && drawn<FIBERS; f++){
+      const key = keys[(f*7919) % keys.length];
+      const arr = buckets.get(key);
+      if(!arr || arr.length < 2) continue;
+      const i1 = arr[f % arr.length], i2 = arr[(f*3+1) % arr.length];
+      if(i1 === i2) continue;
+      const x1=px(layout[i1*3]), y1=py(layout[i1*3+1]);
+      const x2=px(layout[i2*3]), y2=py(layout[i2*3+1]);
+      const r = layout[i1*3+2]|0, c = COLORS[r]||COLORS[0];
+      bctx.strokeStyle = 'rgba('+c+',0.055)';
+      bctx.beginPath(); bctx.moveTo(x1,y1); bctx.lineTo(x2,y2); bctx.stroke();
+      drawn++;
+    }
+    bctx.restore();
+  }
+
+  function resize(){
+    const st = document.getElementById('stage');
+    W = st.clientWidth; H = st.clientHeight;
+    const dpr = Math.min(window.devicePixelRatio||1, 2);
+    [bg,fx].forEach(c=>{ c.width = W*dpr; c.height = H*dpr; });
+    bg.style.width=W+'px'; bg.style.height=H+'px';
+    fx.style.width=W+'px'; fx.style.height=H+'px';
+    bctx.setTransform(dpr,0,0,dpr,0,0); fctx.setTransform(dpr,0,0,dpr,0,0);
+    computeMap();
+    if(layout) drawStatic();
+  }
+
+  fetch('/api/brain-layout').then(r=>{
+    if(!r.ok) throw new Error('HTTP '+r.status);
+    return r.arrayBuffer();
+  }).then(buf=>{
+    layout = new Float32Array(buf);
+    const n = layout.length/3;
+    depth = makeDepth(n);
+    document.getElementById('loadTxt').textContent = '已加载 '+n.toLocaleString()+' 个神经元，连接直播…';
+    const cnt=[0,0,0,0,0,0];
+    for(let i=2;i<layout.length;i+=3) cnt[layout[i]|0]++;
+    document.getElementById('regions').innerHTML = REGIONS.map((r,i)=>
+      '<div class="reg"><div class="t"><span>'+r.name+'</span><span id="rc'+i+'">0</span></div>'+
+      '<div class="bar"><i id="rb'+i+'"></i></div></div>').join('');
+    resize();
+    document.getElementById('loading').style.display='none';
+    // ?static=1 → 静态预览模式（不连后端，渲染一帧模拟活动点）
+    // 用途：GitHub 展示截图 / 没有后端时也能看到画面
+    const params = new URLSearchParams(location.search);
+    if (params.get('static') === '1') {
+      renderStaticPreview();
+      document.getElementById('liveTxt').textContent = '静态预览';
+      document.getElementById('dot').classList.add('off');
+    } else {
+      connect();
+    }
+  }).catch(e=>{
+    document.getElementById('loadTxt').textContent = '加载失败：'+e.message;
+  });
+
+  // 静态预览：随机点亮 ~900 个神经元，模拟一帧真实活动
+  function renderStaticPreview(){
+    const n = layout.length/3;
+    const reg = [0,0,0,0,0,0];
+    let seed = 777;
+    const rnd = () => { seed = (seed*1103515245+12345) & 0x7fffffff; return seed/0x7fffffff; };
+    const sp = [];
+    for(let k=0;k<900;k++){ sp.push(Math.floor(rnd()*n)); }
+    for(const j of sp) reg[layout[j*3+2]|0]++;
+    onFrame({ t: 128473, n: 900, rate: 900/N_EXPECT, sp: sp, reg: reg, up: 5823 });
+  }
+
+  let maxReg = 1, lastRecv = Date.now();
+
+  function onFrame(d){
+    lastRecv = Date.now();
+    document.getElementById('nActive').textContent = d.n.toLocaleString();
+    document.getElementById('rate').textContent = (d.rate*100).toFixed(3)+'%';
+    document.getElementById('steps').textContent = d.t.toLocaleString();
+    document.getElementById('uptime').textContent = fmtTime(d.up);
+    document.getElementById('dot').classList.remove('off');
+    document.getElementById('liveTxt').textContent = '实时';
+
+    let mx=1; for(let i=0;i<d.reg.length;i++) if(d.reg[i]>mx) mx=d.reg[i];
+    if(mx>maxReg) maxReg = mx;
+    for(let i=0;i<d.reg.length && i<6;i++){
+      const el=document.getElementById('rc'+i), bar=document.getElementById('rb'+i);
+      if(el) el.textContent = d.reg[i].toLocaleString();
+      if(bar) bar.style.width = Math.min(100, d.reg[i]/maxReg*100)+'%';
+    }
+    if(!layout) return;
+
+    // 拖尾：半透明覆盖（缓慢淡出 → 放电余晖）
+    fctx.fillStyle = 'rgba(5,8,12,0.22)';
+    fctx.fillRect(0,0,W,H);
+
+    const sp = d.sp;
+    fctx.globalCompositeOperation = 'lighter';
+    for(let k=0;k<sp.length;k++){
+      const j = sp[k], i = j*3;
+      const X = px(layout[i]), Y = py(layout[i+1]);
+      if(X<0||X>=W||Y<0||Y>=H) continue;
+      const c = COLORS[layout[i+2]|0] || COLORS[0];
+      const z = depth[j];
+      const rad = 4.5 + z*4;          // 近处更大（景深）
+      // 径向渐变辉光（比硬圆精致得多）
+      const g = fctx.createRadialGradient(X,Y,0,X,Y,rad);
+      g.addColorStop(0,   'rgba('+c+',0.95)');
+      g.addColorStop(0.35,'rgba('+c+',0.45)');
+      g.addColorStop(1,   'rgba('+c+',0)');
+      fctx.fillStyle = g;
+      fctx.beginPath(); fctx.arc(X,Y,rad,0,6.283); fctx.fill();
+      // 白色核心
+      fctx.fillStyle = 'rgba(255,255,255,'+(0.55+z*0.35).toFixed(2)+')';
+      fctx.beginPath(); fctx.arc(X,Y,0.9+z*0.6,0,6.283); fctx.fill();
+    }
+    fctx.globalCompositeOperation = 'source-over';
+  }
+
+  function fmtTime(s){
+    s = Math.floor(s);
+    const h = Math.floor(s/3600), m = Math.floor(s%3600/60), ss = s%60;
+    return (h>0? h+':' : '') + String(m).padStart(h>0?2:1,'0') + ':' + String(ss).padStart(2,'0');
+  }
+
+  function connect(){
+    const es = new EventSource('/api/brain-live');
+    es.onmessage = e => { try { onFrame(JSON.parse(e.data)); } catch(err){} };
+    es.onopen = () => { document.getElementById('liveTxt').textContent='已连接'; };
+    es.onerror = () => {
+      document.getElementById('dot').classList.add('off');
+      document.getElementById('liveTxt').textContent='重连中';
+    };
+  }
+
+  window.addEventListener('resize', ()=>{ resize(); });
+  resize();
+  setInterval(()=>{
+    if(Date.now()-lastRecv > 5000){
+      document.getElementById('dot').classList.add('off');
+      document.getElementById('liveTxt').textContent='无数据';
+    }
+  }, 2000);
+})();
+</script>
+</body>
+</html>
