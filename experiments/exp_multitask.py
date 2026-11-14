@@ -10,6 +10,9 @@
   E2 双向TAG(TAG: A=-0.9, B=+0.9) + 交替训练   ← 关键改进：TAG 始终有信息
   E3 双向TAG + 更长训练
 """
+import sys, os
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 import numpy as np
 from xiaosha_cortex import SpikingCortex
 from xiaosha_hippocampus import N_CH, TAG, run_episode, evaluate, ClassifyTask

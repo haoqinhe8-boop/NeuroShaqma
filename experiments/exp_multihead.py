@@ -10,6 +10,9 @@
 假设：遗忘的根源不是网络容量，是「一个共享 W_out 要同时表示两个冲突解」。
 上界参照：给每个任务一个独立读出头（训练时切换 W_out），预期零遗忘。
 """
+import sys, os
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 import numpy as np
 from xiaosha_cortex import SpikingCortex
 from xiaosha_hippocampus import N_CH, TAG, run_episode

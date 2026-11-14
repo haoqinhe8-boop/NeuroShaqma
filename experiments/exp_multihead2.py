@@ -4,6 +4,9 @@
 v1 的教训：300 轮交替 = 每个头只训练 150 轮，太少先学会 → 结论无效，已废弃。
 v2：每个头各训练 400 轮（共 800 次更新），才有可比性。
 """
+import sys, os
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 import numpy as np
 from xiaosha_cortex import SpikingCortex
 from xiaosha_hippocampus import N_CH, TAG, run_episode

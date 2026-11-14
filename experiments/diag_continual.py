@@ -1,5 +1,8 @@
 # -*- coding: utf-8 -*-
 """对照实验：单独学 A / 单独学 B 各自能到多少（判 B 任务是否可学）"""
+import sys, os
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 import numpy as np
 from xiaosha_cortex import SpikingCortex
 from xiaosha_continual import train_task

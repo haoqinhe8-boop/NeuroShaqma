@@ -5,6 +5,9 @@
   E1 原TAG(A=0,B=0.9) 交替400轮 → A=55% B=45%
   只学A → A98%/B0%；只学B → A0%/B100%
 """
+import sys, os
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 import numpy as np
 from xiaosha_cortex import SpikingCortex
 from xiaosha_hippocampus import N_CH, TAG, run_episode

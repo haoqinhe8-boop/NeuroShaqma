@@ -24,6 +24,8 @@ MODULES = [
     ("xiaosha_cortex", 10, "脉冲皮层（28.9 万×720 + 学习）"),
     ("xiaosha_regions", 7, "分区皮层（7 脑区路由）"),
     ("xiaosha_teamwork", 6, "脑区分工合作（跨感官任务+对照+消融）"),
+    ("xiaosha_neuromod", 4, "神经调质（DA学习率扫描: lr.0255→82%±0% 最稳, lr.066→61%崩）"),
+    ("xiaosha_sleep", 4, "睡眠巩固（SHY: 负结果, A 55%→18% 如实记录）"),
     ("xiaosha_continual", 5, "持续学习（任务后锚定：λ=3 把旧任务30%→82%，但新任务受限——如实记录）"),
     ("xiaosha_force", 5, "FORCE工作记忆（DMS 48.7%±2.6% → 100%±0.0%，长延迟600ms仍100%）"),
     ("xiaosha_memory", 5, "工作记忆探测（如实记录：当前架构边界）"),

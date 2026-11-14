@@ -4,6 +4,9 @@
 已有：2 类 DMS（4 种组合）→ 100%
 本实验：4 类（16 种组合）、6 类（36 种组合），看命中率随难度如何衰减。
 """
+import sys, os
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 import numpy as np
 import sys
 
