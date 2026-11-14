@@ -60,6 +60,7 @@ def run_one(mod, desc, timeout, arg='--selftest'):
     try:
         p = subprocess.run([PY, '-X', 'utf8', mod, arg], cwd=HERE,
                            capture_output=True, timeout=timeout,
+                           creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0),
                            env=dict(os.environ, PYTHONIOENCODING='utf-8', PYTHONUTF8='1'))
         out = (p.stdout or b'').decode('utf-8', 'replace') + (p.stderr or b'').decode('utf-8', 'replace')
         rec['exit'] = p.returncode
