@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>小沙大脑 · 能力进展 | NeuroShaqma</title>
+<style>
+  *{margin:0;padding:0;box-sizing:border-box}
+  body{background:#0b0f14;color:#e6edf3;font-family:-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;line-height:1.7;padding:0}
+  .wrap{max-width:980px;margin:0 auto;padding:56px 24px 80px}
+  .kicker{color:#4285f4;font-size:13px;letter-spacing:.14em;font-weight:600;margin-bottom:14px}
+  h1{font-size:2.1rem;font-weight:600;letter-spacing:-.02em;margin-bottom:10px}
+  .lede{color:#8b949e;font-size:1rem;max-width:640px;margin-bottom:44px}
+  .hero{display:grid;grid-template-columns:repeat(3,1fr);gap:1px;background:#1c2530;border:1px solid #1c2530;border-radius:14px;overflow:hidden;margin-bottom:52px}
+  .hero .cell{background:#111820;padding:26px 22px}
+  .hero .big{font-size:2.4rem;font-weight:600;letter-spacing:-.03em;line-height:1.1}
+  .hero .big .from{color:#5a6672;font-size:1.1rem;font-weight:400;text-decoration:line-through;margin-right:8px}
+  .hero .lbl{color:#8b949e;font-size:.82rem;margin-top:6px}
+  h2{font-size:1.15rem;font-weight:600;margin:44px 0 18px;padding-bottom:10px;border-bottom:1px solid #1c2530}
+  .card{background:#111820;border:1px solid #1c2530;border-radius:12px;padding:20px 22px;margin-bottom:14px}
+  .card .t{font-weight:600;margin-bottom:6px;font-size:.95rem}
+  .card .d{color:#8b949e;font-size:.87rem}
+  .num{color:#4285f4;font-weight:600}
+  table{width:100%;border-collapse:collapse;font-size:.87rem;margin:14px 0}
+  th{text-align:left;color:#5f6b78;font-weight:500;padding:8px 8px;border-bottom:1px solid #1c2530;font-size:.8rem}
+  td{padding:9px 8px;border-bottom:1px solid #151d26}
+  td.hi{color:#4ade80;font-weight:600}
+  .bar{height:6px;background:#1c2530;border-radius:3px;overflow:hidden;margin-top:8px}
+  .bar i{display:block;height:100%;background:linear-gradient(90deg,#1a73e8,#4285f4);border-radius:3px}
+  .note{color:#5a6672;font-size:.8rem;margin-top:8px}
+  .tl{list-style:none;font-size:.85rem}
+  .tl li{padding:9px 0 9px 18px;border-left:2px solid #1c2530;position:relative;color:#a8b3bf}
+  .tl li:before{content:'';position:absolute;left:-5px;top:16px;width:8px;height:8px;border-radius:50%;background:#2d3a48}
+  .tl li b{color:#e6edf3}
+  .tl code{color:#4285f4;font-size:.8rem}
+  .honest{background:#151d26;border-left:2px solid #d29922;padding:16px 20px;border-radius:0 8px 8px 0;font-size:.86rem;color:#a8b3bf;margin-top:20px}
+  .honest b{color:#e6edf3}
+  footer{margin-top:56px;padding-top:20px;border-top:1px solid #1c2530;color:#3d4a58;font-size:.78rem}
+  @media(max-width:700px){.hero{grid-template-columns:1fr}h1{font-size:1.6rem}}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="kicker">NEUROSHAQMA · 能力进展</div>
+  <h1>一个多月的真实训练记录</h1>
+  <p class="lede">所有数字来自真实运行，含负结果。开源在 GitHub，全部可复现（<code>experiments/</code> 目录）。作者 Peter，12 岁，上海宝山。</p>
+
+  <div class="hero">
+    <div class="cell">
+      <div class="big"><span class="from">48.7%</span>100%</div>
+      <div class="lbl">工作记忆（DMS 延迟匹配）</div>
+    </div>
+    <div class="cell">
+      <div class="big"><span class="from">30%</span>100%</div>
+      <div class="lbl">多任务保持（旧任务 A）</div>
+    </div>
+    <div class="cell">
+      <div class="big"><span class="from">50%</span>100%</div>
+      <div class="lbl">端到端记忆判断（3 秒延迟）</div>
+    </div>
+  </div>
+
+  <h2>一、工作记忆：从学不会到 100%</h2>
+  <div class="card">
+    <div class="t">问题：R-STDP 训不出稳定持续活动</div>
+    <div class="d">循环吸引子结构早已实现，但无监督局部规则学不出持续放电，DMS 一直卡在随机水平（48%）。</div>
+  </div>
+  <div class="card">
+    <div class="t">方案：FORCE 学习（Sussillo &amp; Abbott 2009）</div>
+    <div class="d">递归最小二乘（RLS）训练读出权重 + 误差反馈回网络。这是神经科学界造稳定吸引子的标准方法。</div>
+    <div class="bar"><i style="width:100%"></i></div>
+    <div class="note">2 类（4 组合）/ 4 类（16 组合）/ 6 类（36 组合）—— <b class="num">全部 100%</b>，延迟加倍到 600ms 仍 100%，3 次独立训练零方差</div>
+  </div>
+
+  <h2>二、多任务遗忘：五种机制实测对比</h2>
+  <table>
+    <tr><th>机制</th><th>A（旧任务）</th><th>B（新任务）</th><th>结论</th></tr>
+    <tr><td>基线（共享单头，无保护）</td><td>30%</td><td>20%</td><td>灾难性遗忘</td></tr>
+    <tr><td>任务后锚定 λ=3（EWC 式）</td><td>82%</td><td>20%</td><td>保旧的，学不了新的</td></tr>
+    <tr><td>双向任务标签（TAG ±0.9）</td><td>40%</td><td>100%</td><td>学会新的，旧的掉</td></tr>
+    <tr><td>多头读出 400 轮/头</td><td>75%</td><td>98%</td><td>明显改善</td></tr>
+    <tr><td class="hi">多头读出 + 门控（正式模块）</td><td class="hi">100%</td><td class="hi">95%</td><td class="hi">已解决</td></tr>
+  </table>
+  <div class="note">对照实验很关键：两个任务<b>单独学都能到 98-100%</b> —— 遗忘是「任务冲突」，不是「能力不足」。</div>
+
+  <h2>三、神经调质：情绪如何影响学习</h2>
+  <div class="card">
+    <div class="t">反直觉发现：多巴胺（学习率）不是越高越好</div>
+    <table>
+      <tr><th>多巴胺水平</th><th>实际学习率</th><th>3 个种子的准确率</th></tr>
+      <tr><td>0.00</td><td>0.0120</td><td>78% ± 4%</td></tr>
+      <tr><td class="hi">0.25</td><td class="hi">0.0255</td><td class="hi">82% ± 0%（零方差最稳）</td></tr>
+      <tr><td>0.50</td><td>0.0390</td><td>85% ± 11%</td></tr>
+      <tr><td>0.75</td><td>0.0525</td><td>84% ± 12%</td></tr>
+      <tr><td>1.00</td><td>0.0660</td><td>61% ± 12%（崩）</td></tr>
+    </table>
+    <div class="note">学习率太高 → 权重震荡 / softmax 饱和。最优区间 <b class="num">lr ≈ 0.025–0.039</b></div>
+  </div>
+
+  <h2>四、端到端：皮层 + 工作记忆协作</h2>
+  <div class="card">
+    <div class="t">任务：看颜色 → 转身（延迟）→ 判断是否同色</div>
+    <div class="d">皮层提供真实 42 维表征，FORCE 跨延迟保持它。</div>
+    <table>
+      <tr><th>条件</th><th>准确率</th></tr>
+      <tr><td>皮层 + FORCE（延迟 3 秒）</td><td class="hi">100%</td></tr>
+      <tr><td>皮层 + FORCE（延迟 6 秒）</td><td class="hi">100%</td></tr>
+      <tr><td>无记忆基线（瞎猜）</td><td>50%</td></tr>
+    </table>
+  </div>
+
+  <h2>五、如实记录的负结果</h2>
+  <div class="honest">
+    <b>睡眠巩固（SHY 假设）实验失败</b>：按「重放 20 样本 + 突触整体下调 ×0.92」做，旧任务保持率从 55% 掉到 <b>18%</b>（有害），新任务仅从 45% 升到 52%。<br>
+    原因：突触下调的代价 &gt; 少量重放的收益。<b>该机制不采用</b>，写进 README 以防后人重复踩坑。
+  </div>
+
+  <h2>六、质量保证</h2>
+  <div class="card">
+    <div class="t">pytest 全量 22/22 通过</div>
+    <div class="d">包含 22 个神经科学模块（皮层、五感、八内脏、13 器官、海马体、分区、回路、具身、工作记忆、持续学习、神经调质、睡眠、门控多任务等），11 分 25 秒完成，零失败。</div>
+  </div>
+
+  <h2>七、本次代码提交</h2>
+  <ul class="tl">
+    <li><b>FORCE 攻破工作记忆</b> · 48.7% → 100% · <code>ac4dfa8</code></li>
+    <li><b>持续学习研究 + FORCE 容量</b> · 2/4/6 类全 100% · <code>68a8d7a</code></li>
+    <li><b>神经调质 + 睡眠负结果</b> · 学习率最优区间 · <code>b7a9a63</code></li>
+    <li><b>端到端集成</b> · 皮层+FORCE · <code>1937237</code></li>
+    <li><b>多任务遗忘已解决</b> · A100%/B95% · <code>de314f1</code></li>
+    <li><b>修 experiments 两个 bug</b> · <code>c05bc5b</code></li>
+    <li><b>门控多任务正式模块</b> · <code>8908aa7</code></li>
+  </ul>
+
+  <footer>
+    NeuroShaqma · 288,964 神经元 × 720 突触 · MIT License · 作者 Peter（上海宝山，12 岁）<br>
+    全部数字可复现：<code>experiments/</code> 目录下每个脚本独立可跑。负结果一并公开。
+  </footer>
+</div>
+</body>
+</html>
