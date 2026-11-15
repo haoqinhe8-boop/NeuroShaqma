@@ -159,21 +159,37 @@ class Neuromodulator:
 # ==================== 具身小沙（闭环）====================
 
 class EmbodiedXiaosha:
-    """感官 → 脉冲皮层 → 动作 → 环境 → 感官（完整闭环）。"""
+    """感官 → 脉冲皮层 → 动作 → 环境 → 感官（完整闭环）。
 
-    def __init__(self, n_neurons=60000, seed=42, encode_gain=2.5):
+    两种输入模式：
+      saliency  —— 12 维显著性（快，用于行为测试/集成）
+      full      —— 95 维完整四感（视24+听35+触12+嗅16+味8，吃原始信号）
+
+    full 模式的数据流：
+      image/audio/pressure/gas/chemicals → 四感前端（真实信号处理）→ 95 维
+        → RateEncoder → 380 维电流 → 注入 V1 L4 → 皮层放电 → PFC 解读 → 动作
+    """
+
+    N_FEAT_FULL = 95          # 24+35+12+16+8
+    N_FEAT_SALIENCY = 12
+
+    def __init__(self, n_neurons=60000, seed=42, encode_gain=2.5, mode="full"):
+        from xiaosha_perception import Perception
+        from xiaosha_chemosense import Gustation
+
+        self.mode = mode
         self.cortex = StructuredCortex(total=n_neurons, seed=seed)
-        self.enc = RateEncoder(n_feat=12, n_per_feat=4, gain=encode_gain)
-        # 输入注入目标：V1 区的 L4（视觉输入层）
+        self.perception = Perception()      # 视/听/触/嗅
+        self.gustation = Gustation()        # 味觉
+        n_feat = self.N_FEAT_FULL if mode == "full" else self.N_FEAT_SALIENCY
+        self.n_feat = n_feat
+        self.enc = RateEncoder(n_feat=n_feat, n_per_feat=4, gain=encode_gain)
+        # 注入面：整个 V1 L4，按通道循环映射
         v1_l4 = self.cortex.groups[(0, 0, 0)]
-        # 注入面覆盖整个 V1 L4（不只是 48 个神经元）——否则信号太弱传不到下游
         self.input_ids = v1_l4
-        # 通道映射：第 i 个 V1 L4 神经元接收第 (i % n_ch) 个通道的电流
         self.input_map = np.arange(v1_l4.size, dtype=np.int64) % self.enc.dim_out
-        # 运动读出：PFC 区（索引 3）的 L5 —— 决策区，3 跳可达
-        # 为什么不用 M1：M1 在 V1->V2->IT->PFC->M1 的第 4 跳，正常活动衰减到不了
-        # （实测：M1 完全不发放，动作恒为 0）。PFC 是决策区，读它更合理。
-        m1 = self.cortex.groups[(3, 2, 0)]          # PFC 的 L5
+        # 读出：PFC L5（3 跳可达；M1 在 4 跳外衰减到不了）
+        m1 = self.cortex.groups[(3, 2, 0)]
         if m1.size < 60:
             m1 = np.flatnonzero(self.cortex.region_id == 3)
         self.motor = MotorReadout(m1)
@@ -181,7 +197,36 @@ class EmbodiedXiaosha:
         self.t = 0
         self.log = []
 
-    # ---------- 感官 → 12 维底层特征 ----------
+    # ---------- 全感：原始信号 → 95 维（真实信号处理）----------
+    def perceive(self, image=None, audio=None, audio_right=None, pressure=None,
+                 gas=None, chemicals=None, temp=25.0, shear=0.0):
+        """把可用的原始感官信号转成 95 维特征（缺失通道补 0）。"""
+        v = np.zeros(24, dtype=np.float32)
+        a = np.zeros(35, dtype=np.float32)
+        t = np.zeros(12, dtype=np.float32)
+        o = np.zeros(16, dtype=np.float32)
+        g = np.zeros(8, dtype=np.float32)
+        if image is not None:
+            v = self.perception.retina.encode(image)
+        if audio is not None:
+            a = self.perception.cochlea.encode(audio, audio_right)
+        if pressure is not None:
+            t = self.perception.skin.encode(pressure, temp, shear)
+        if gas is not None:
+            o = self.perception.nose.encode(gas)
+        if chemicals is not None:
+            g = self.gustation.encode(chemicals)
+        return np.concatenate([v, a, t, o, g])
+
+    # ---------- 显著性 → 95 维（补零，向后兼容）----------
+    def saliency_to_full(self, scene):
+        f = np.zeros(24 + 35 + 12 + 16 + 8, dtype=np.float32)
+        base = self.scene_to_features(scene)     # 12 维
+        # 放进"味觉 8 维"之前的视觉前 12 槽（保留语义）
+        f[:12] = base
+        return f
+
+    # ---------- 感官 → 12 维底层特征（saliency 模式）----------
     @staticmethod
     def scene_to_features(scene):
         """把场景压成 12 维（给 RateEncoder 用）。
@@ -207,12 +252,27 @@ class EmbodiedXiaosha:
         return f
 
     # ---------- 一步 ----------
-    def step(self, scene):
-        """scene 是 dict（显著性值）。返回 (动作, 诊断信息)。"""
-        feats = self.scene_to_features(scene)
+    def step(self, scene=None, image=None, audio=None, audio_right=None,
+             pressure=None, gas=None, chemicals=None, temp=25.0, shear=0.0):
+        """走一步。可给原始感官信号（full）或显著性 dict（saliency）。"""
+        has_raw = any(x is not None for x in
+                      (image, audio, pressure, gas, chemicals))
+        if has_raw:
+            feats = self.perceive(image, audio, audio_right, pressure,
+                                  gas, chemicals, temp, shear)
+            # 调质用感官显著性（威胁/目标/电量由触觉-温度、气味等派生）
+            sense = {"threat": float(np.clip(feats[0] / 3, 0, 1)),
+                     "goal": float(np.clip(feats[1] / 3, 0, 1)),
+                     "battery": 1.0, "novelty": 0.5}
+        else:
+            scene = scene or {}
+            base = self.scene_to_features(scene)
+            feats = (self.saliency_to_full(scene) if self.n_feat == self.N_FEAT_FULL
+                     else base)
+            sense = scene
 
-        # ① 本能 → 调质（拧旋钮）
-        self.mods.update(scene)
+        # ① 本能 → 调质
+        self.mods.update(sense)
         self.mods.apply(self.cortex)
 
         # ② 感官 → 输入电流（注入整个 V1 L4，按 input_map 分通道）
@@ -231,6 +291,7 @@ class EmbodiedXiaosha:
             "t": self.t, "n_spikes": int(sp.size),
             "rates": self.motor.last_rates.copy(),
             "action": action.copy(),
+            "feats_dim": int(feats.size),
             "mod": {"da": self.mods.da, "ne": self.mods.ne,
                     "ach": self.mods.ach, "theta": self.cortex.theta},
         }
@@ -400,6 +461,36 @@ def selftest():
     print("  [10] 感官编码: 12 维特征 → %d 维输入电流（非零 %.0f%%）"
           % (cur.size, (cur > 0).mean() * 100))
     ok += int(cur.size == 48 and (cur > 0).mean() > 0.2)
+
+    # ---- 11. 全感模式：原始信号（图/声/触/嗅/味）→ 95 维 → 皮层 → 动作 ----
+    total += 1
+    em11 = EmbodiedXiaosha(n_neurons=60000, seed=31)
+    yy, xx = np.mgrid[0:32, 0:32]
+    img = ((np.sin(xx * np.pi / 4) > 0) * 255).astype(np.uint8)
+    aud = np.sin(2 * np.pi * 440 * np.arange(4000) / 16000).astype(np.float32)
+    press = np.zeros((8, 8), dtype=np.float32); press[3:5, 3:5] = 0.7
+    gas = np.array([0.9, 0.7, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1], dtype=np.float32)
+    chem = {"sweet": 0.8}
+    for _ in range(15):
+        a11, i11 = em11.step(image=img, audio=aud, pressure=press, gas=gas, chemicals=chem)
+    print("  [11] 全感模式: 特征 %d 维（应95）| 发放 %d | 动作 %s"
+          % (i11["feats_dim"], i11["n_spikes"], np.round(a11, 2)))
+    ok += int(i11["feats_dim"] == 95 and i11["n_spikes"] > 0 and np.isfinite(a11).all())
+
+    # ---- 12. 看到不同东西 → 不同运动输出（视觉真的进皮层了）----
+    total += 1
+    em12a = EmbodiedXiaosha(n_neurons=60000, seed=37)
+    em12b = EmbodiedXiaosha(n_neurons=60000, seed=37)   # 同种子同皮层
+    vert = ((np.sin(xx * np.pi / 4) > 0) * 255).astype(np.uint8)
+    hori = ((np.sin(yy * np.pi / 4) > 0) * 255).astype(np.uint8)
+    ra, rb = [], []
+    for _ in range(20):
+        _a, ia = em12a.step(image=vert)
+        _b, ib = em12b.step(image=hori)
+        ra.append(ia["rates"]); rb.append(ib["rates"])
+    d12 = float(np.abs(np.mean(ra, 0) - np.mean(rb, 0)).sum())
+    print("  [12] 竖条纹 vs 横条纹 → 运动模式差异 %.3f（>0.005 说明视觉进了皮层）" % d12)
+    ok += int(d12 > 0.005)
 
     print("  结果：%d/%d 项通过" % (ok, total))
     return ok == total
