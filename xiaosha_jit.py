@@ -16,7 +16,7 @@ from numba import njit
 def step_jit(v, ref, theta, leak, ref_steps,
              syn_ptr, syn_dst, syn_w,
              region_id, n_region, max_n, max_per_region,
-             sp_buf, cnt_buf):
+             sp_buf, cnt_buf, cell_group=None, n_group=0):
     """一步：漏电 → 不应期 → 阈值 → 按区限流 → 事件驱动递送。
 
     返回实际发放数量（sp_buf[:n] 是发放的神经元 id）。
@@ -38,20 +38,33 @@ def step_jit(v, ref, theta, leak, ref_steps,
             sp_buf[n_sp] = i
             n_sp += 1
 
-    # ---- ③ 限流：取膜电位最高的 max_n 个（与原版 np.argpartition 语义一致）----
+    # ---- ③ 限流：优先按 cell_group 配额（区×层×类型），退化到按区 ----
+    # 为什么必须细到"层"：只按区分配额时，被注入的 L4 会占满整个 V1 的名额，
+    # L23/L5 饿死 -> V1 的长程投射细胞（L5 锥体）不放电 -> 信号传不到 V2（实测 PFC=0）。
+    # 按 18 个 cell_group 分，每层都有机会，前馈链才通。
     if n_sp > max_n:
-        n_keep = max_n
-        vals = np.empty(n_sp, dtype=np.float32)
-        for k in range(n_sp):
-            vals[k] = v[sp_buf[k]]
-        # 用 partition（O(n)）而不是 sort（O(n log n)）—— 实测 0.021ms vs 7.573ms
-        thr = np.partition(vals, n_sp - n_keep)[n_sp - n_keep]
-        out = 0
-        for k in range(n_sp):
-            if v[sp_buf[k]] >= thr and out < n_keep:
-                sp_buf[out] = sp_buf[k]
-                out += 1
-        n_sp = out
+        if cell_group is not None and n_group > 0:
+            for gi in range(n_group):
+                cnt_buf[gi] = 0
+            out = 0
+            for k in range(n_sp):
+                gidx = cell_group[sp_buf[k]]
+                if cnt_buf[gidx] < max_per_region:
+                    sp_buf[out] = sp_buf[k]
+                    out += 1
+                    cnt_buf[gidx] += 1
+            n_sp = out
+        else:
+            for r in range(n_region):
+                cnt_buf[r] = 0
+            out = 0
+            for k in range(n_sp):
+                rid = region_id[sp_buf[k]]
+                if cnt_buf[rid] < max_per_region:
+                    sp_buf[out] = sp_buf[k]
+                    out += 1
+                    cnt_buf[rid] += 1
+            n_sp = out
 
     # ---- ④ 事件驱动递送（只有发放的神经元才干活）----
     for k in range(n_sp):

@@ -42,7 +42,10 @@ class RateEncoder:
         self.n_feat = n_feat
         self.n_per = n_per_feat
         self.gain = gain
-        # 每个特征对应 n_per 个神经元，各有不同偏置（tuning）
+        # 每个特征对应 n_per 个神经元，各有不同偏置（tuning curve）
+        # 偏置含负值 = 给网络一个基线驱动（真实皮层有自发活动，不是等输入才动）。
+        # 区分"有没有某个感觉"靠的是**模式变化**，不是"有无电流"：
+        #   feats 归一化后，有空间感输入时各通道的相对比例不同 -> 电流模式不同 -> 皮层模式不同
         self.offsets = np.linspace(-0.3, 0.3, n_per_feat, dtype=np.float32)
         self.dim_out = n_feat * n_per_feat
 
@@ -51,7 +54,9 @@ class RateEncoder:
         f = np.asarray(features, dtype=np.float32).ravel()[:self.n_feat]
         if f.size < self.n_feat:
             f = np.pad(f, (0, self.n_feat - f.size))
-        # 归一化到 0-1
+        # 归一化到 0-1（保留相对比例，这是通道间"模式"的来源）
+        # 注意：不要追求"0 输入 = 0 电流"——那会让网络完全静息（实测发放掉到 33）。
+        # 真实皮层有自发基线；这里靠 offsets 的负值提供，区分靠模式不靠有无。
         f = np.clip(f / (np.abs(f).max() + 1e-6), 0, 1)
         # 每个特征 × 每个 tuning 偏移
         out = (f[:, None] - self.offsets[None, :]) * self.gain
@@ -170,17 +175,20 @@ class EmbodiedXiaosha:
         → RateEncoder → 380 维电流 → 注入 V1 L4 → 皮层放电 → PFC 解读 → 动作
     """
 
-    N_FEAT_FULL = 95          # 24+35+12+16+8
+    N_FEAT_FULL = 115         # 95（视24+听35+触12+嗅16+味8）+ 20（深度9+偏振6+湿度5）
+    N_FEAT_BASE = 95          # 不含空间感
     N_FEAT_SALIENCY = 12
 
-    def __init__(self, n_neurons=60000, seed=42, encode_gain=2.5, mode="full"):
+    def __init__(self, n_neurons=60000, seed=42, encode_gain=7.0, mode="full"):
         from xiaosha_perception import Perception
         from xiaosha_chemosense import Gustation
+        from xiaosha_depth import SpatialSenses
 
         self.mode = mode
         self.cortex = StructuredCortex(total=n_neurons, seed=seed)
         self.perception = Perception()      # 视/听/触/嗅
         self.gustation = Gustation()        # 味觉
+        self.spatial = SpatialSenses()      # 深度/偏振/湿度
         n_feat = self.N_FEAT_FULL if mode == "full" else self.N_FEAT_SALIENCY
         self.n_feat = n_feat
         self.enc = RateEncoder(n_feat=n_feat, n_per_feat=4, gain=encode_gain)
@@ -194,18 +202,24 @@ class EmbodiedXiaosha:
             m1 = np.flatnonzero(self.cortex.region_id == 3)
         self.motor = MotorReadout(m1)
         self.mods = Neuromodulator()
+        # 九项认知能力（可单独消融）
+        from xiaosha_cognitive_mod import CognitiveModulator
+        self.cog = CognitiveModulator()
+        self.ablate_input_flag = False   # True 时完全切断感觉输入（消融用）
         self.t = 0
         self.log = []
 
     # ---------- 全感：原始信号 → 95 维（真实信号处理）----------
     def perceive(self, image=None, audio=None, audio_right=None, pressure=None,
-                 gas=None, chemicals=None, temp=25.0, shear=0.0):
-        """把可用的原始感官信号转成 95 维特征（缺失通道补 0）。"""
+                 gas=None, chemicals=None, temp=25.0, shear=0.0,
+                 frame=None, pol_angle=None, humidity=None, heading=0.0):
+        """原始感官信号 → 115 维（视24+听35+触12+嗅16+味8+空间20）。"""
         v = np.zeros(24, dtype=np.float32)
         a = np.zeros(35, dtype=np.float32)
         t = np.zeros(12, dtype=np.float32)
         o = np.zeros(16, dtype=np.float32)
         g = np.zeros(8, dtype=np.float32)
+        s = np.zeros(20, dtype=np.float32)
         if image is not None:
             v = self.perception.retina.encode(image)
         if audio is not None:
@@ -216,11 +230,14 @@ class EmbodiedXiaosha:
             o = self.perception.nose.encode(gas)
         if chemicals is not None:
             g = self.gustation.encode(chemicals)
-        return np.concatenate([v, a, t, o, g])
+        if frame is not None or pol_angle is not None or humidity is not None:
+            s = self.spatial.encode(frame=frame, pol_angle=pol_angle,
+                                    humidity=humidity, heading=heading)
+        return np.concatenate([v, a, t, o, g, s])
 
     # ---------- 显著性 → 95 维（补零，向后兼容）----------
     def saliency_to_full(self, scene):
-        f = np.zeros(24 + 35 + 12 + 16 + 8, dtype=np.float32)
+        f = np.zeros(24 + 35 + 12 + 16 + 8 + 20, dtype=np.float32)
         base = self.scene_to_features(scene)     # 12 维
         # 放进"味觉 8 维"之前的视觉前 12 槽（保留语义）
         f[:12] = base
@@ -253,13 +270,16 @@ class EmbodiedXiaosha:
 
     # ---------- 一步 ----------
     def step(self, scene=None, image=None, audio=None, audio_right=None,
-             pressure=None, gas=None, chemicals=None, temp=25.0, shear=0.0):
+             pressure=None, gas=None, chemicals=None, temp=25.0, shear=0.0,
+             frame=None, pol_angle=None, humidity=None, heading=0.0):
         """走一步。可给原始感官信号（full）或显著性 dict（saliency）。"""
         has_raw = any(x is not None for x in
-                      (image, audio, pressure, gas, chemicals))
+                      (image, audio, pressure, gas, chemicals,
+                       frame, pol_angle, humidity))
         if has_raw:
             feats = self.perceive(image, audio, audio_right, pressure,
-                                  gas, chemicals, temp, shear)
+                                  gas, chemicals, temp, shear,
+                                  frame, pol_angle, humidity, heading)
             # 调质用感官显著性（威胁/目标/电量由触觉-温度、气味等派生）
             sense = {"threat": float(np.clip(feats[0] / 3, 0, 1)),
                      "goal": float(np.clip(feats[1] / 3, 0, 1)),
@@ -275,22 +295,32 @@ class EmbodiedXiaosha:
         self.mods.update(sense)
         self.mods.apply(self.cortex)
 
-        # ② 感官 → 输入电流（注入整个 V1 L4，按 input_map 分通道）
-        currents = self.enc.encode(feats) * self.mods.gain
+        # ② 皮层之前：注意增益（biased competition）
+        cog_gain = self.cog.pre_cortex(feats, sense.get("task_feature"))
+        # 感官 → 输入电流（注入整个 V1 L4，按 input_map 分通道）
+        currents = self.enc.encode(feats * cog_gain) * self.mods.gain
         v = self.cortex.v
-        np.add.at(v, self.input_ids, currents[self.input_map])
+        if not self.ablate_input_flag:
+            np.add.at(v, self.input_ids, currents[self.input_map])
+        # 消融时：不注入。注意不能只压膜电位——注意增益会把注入放大到
+        # -5+8=3，超过阈值，V1 其实还在放电（只是被限流挤掉）。必须切断注入。
 
         # ③ 皮层演化（真放电，行为由此产生）
         sp = self.cortex.step(None)
 
-        # ④ 运动区解读 → 动作
-        action = self.motor.decode(sp, gain=0.35)
+        # ④ 运动区解读 → 原始动作（这是皮层涌现的，还没被认知层修饰）
+        action_raw = self.motor.decode(sp, gain=0.35)
+
+        # ⑤ 认知调制（九项能力调节动作/模式/缩放）
+        action, cog_info = self.cog.post_cortex(sense, action_raw, sense)
 
         self.t += 1
         info = {
             "t": self.t, "n_spikes": int(sp.size),
             "rates": self.motor.last_rates.copy(),
             "action": action.copy(),
+            "action_raw": action_raw.copy(),
+            "cog": cog_info,
             "feats_dim": int(feats.size),
             "mod": {"da": self.mods.da, "ne": self.mods.ne,
                     "ach": self.mods.ach, "theta": self.cortex.theta},
@@ -314,11 +344,15 @@ class EmbodiedXiaosha:
             a, i = self.step(scene)
             base.append(np.abs(a).sum()); base_sp.append(i["n_spikes"])
         # 消融：把整个 V1 区压住（切断感觉通路）
-        # 关键：网络有活动残留（reverberation），压制后下游还会放几十步才衰减到静息。
-        # 实测：压住 V1 后第 0 步下游仍 1200，第 4 步 IT 独占 1200（区内自我维持），
-        #       需要 ~50 步才归零。所以必须等稳态再测，否则测到的是残留不是因果。
+        # 关键：网络有持续活动（reverberation / persistent activity），切输入后
+        # 下游仍饱和 1200 达 ~60 步（区际来回跳：V2->PFC->IT->M1），
+        # 实测衰减曲线：步0-60 饱和 1200，步70 降到 317，步80 归零。
+        # 所以等待必须 >=100 步，否则测到的是残留不是因果。
+        # （这个 70 步的时间常数本身是个有意思的结果：模拟 100Hz 下约 0.7 秒，
+        #   接近真实皮层的持续活动时长。）
         v1 = np.flatnonzero(self.cortex.region_id == 0)
-        for _ in range(50):                    # 先让它衰减到稳态
+        self.ablate_input_flag = True          # 切断感觉输入
+        for _ in range(120):                   # 等 reverberation 完全衰减（实测需 ~80 步）
             self.cortex.v[v1] = -5.0
             self.cortex.ref[v1] = 5
             self.step(scene)
@@ -328,6 +362,7 @@ class EmbodiedXiaosha:
             self.cortex.ref[v1] = 5
             a, i = self.step(scene)
             ablated.append(np.abs(a).sum()); abl_sp.append(i["n_spikes"])
+        self.ablate_input_flag = False
         return (float(np.mean(base)), float(np.mean(ablated)),
                 float(np.mean(base_sp)), float(np.mean(abl_sp)))
 
@@ -473,9 +508,10 @@ def selftest():
     chem = {"sweet": 0.8}
     for _ in range(15):
         a11, i11 = em11.step(image=img, audio=aud, pressure=press, gas=gas, chemicals=chem)
-    print("  [11] 全感模式: 特征 %d 维（应95）| 发放 %d | 动作 %s"
+    print("  [11] 全感模式: 特征 %d 维（应115=95+空间20）| 发放 %d | 动作 %s"
           % (i11["feats_dim"], i11["n_spikes"], np.round(a11, 2)))
-    ok += int(i11["feats_dim"] == 95 and i11["n_spikes"] > 0 and np.isfinite(a11).all())
+    ok += int(i11["feats_dim"] == EmbodiedXiaosha.N_FEAT_FULL and i11["n_spikes"] > 0
+              and np.isfinite(a11).all())
 
     # ---- 12. 看到不同东西 → 不同运动输出（视觉真的进皮层了）----
     total += 1

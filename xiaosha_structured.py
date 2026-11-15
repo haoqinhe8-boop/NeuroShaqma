@@ -112,9 +112,14 @@ class StructuredCortex:
         self._inject_i = 0
         if _HAS_JIT:
             self._sp_buf = np.zeros(self.total, dtype=np.int64)
-            self._cnt_buf = np.zeros(len(REGIONS), dtype=np.int64)
-            self._max_n = max(1, int(self.total * 0.02))
-            self._max_per_region = max(1, int(self.total * 0.004))
+            # cell_group = region*6 + layer*2 + type（18 组，用于层级别配额）
+            self._cell_group = (self.region_id.astype(np.int64) * 6
+                                + self.layer_id.astype(np.int64) * 2
+                                + self.type_id.astype(np.int64))
+            self._n_group = int(len(REGIONS) * 3 * 2)
+            self._cnt_buf = np.zeros(self._n_group, dtype=np.int64)
+            self._max_n = max(1, int(self.total * 0.15))
+            self._max_per_region = max(1, int(self.total * 0.006))
 
         self.v = np.zeros(self.total, dtype=np.float32)
         self.ref = np.zeros(self.total, dtype=np.int16)
@@ -316,7 +321,8 @@ class StructuredCortex:
                             self.syn_ptr, self.syn_dst, self.syn_w,
                             self.region_id, len(REGIONS),
                             self._max_n, self._max_per_region,
-                            self._sp_buf, self._cnt_buf)
+                            self._sp_buf, self._cnt_buf,
+                            self._cell_group, self._n_group)
             sp = self._sp_buf[:nsp].copy()
             rate_now = nsp / self.total
             if rate_now > 0.015:
@@ -340,7 +346,7 @@ class StructuredCortex:
         sp = np.flatnonzero(v >= self.theta)
         # 代谢约束：每步发放不超过 2% 神经元（真实大脑受能量限制，这比缓慢的阈值反馈稳定）
         # 光靠阈值慢速反馈会振荡（实测 20%→0%→0.04% 来回摆），硬限流 + 温和阈值才是稳的
-        max_n = max(1, int(self.total * 0.02))
+        max_n = max(1, int(self.total * 0.15))
         if sp.size > max_n:
             keep = np.argpartition(v[sp], -max_n)[-max_n:]
             sp = np.sort(sp[keep])
