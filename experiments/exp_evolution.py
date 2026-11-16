@@ -35,6 +35,7 @@ from xiaosha_reproduction import (
     GENE_NAMES, GENES, random_genome, reproduce,
 )
 from xiaosha_structured import StructuredCortex
+from xiaosha_mating import MatingSystem
 
 SEEDS = (11, 23, 37)          # 活力测量的三个 seed（取平均降噪）
 
@@ -122,6 +123,7 @@ def main(n_gen=20, pop_size=6, survival_ratio=0.5, mutation_rate=0.15):
 
     history = []
     uterus = Uterus()
+    mating = MatingSystem(max_courtship_attempts=3)
     n_survivors = max(2, int(round(pop_size * survival_ratio)))
 
     for gen in range(n_gen):
@@ -150,17 +152,29 @@ def main(n_gen=20, pop_size=6, survival_ratio=0.5, mutation_rate=0.15):
         # 2. 选择
         survivors = [pop[i] for i in order[:n_survivors]]
 
-        # 3. 繁殖（每个存活者的后代填满种群）
+        # 3. 繁殖：必须走完求偶序列才能生殖（不再直接 reproduce）
+        # 雌性按"好基因 + 避免近交"选择，所以低活力雄性会被拒
+        median_vit = float(np.median(fits))
+        mating.set_population_median(median_vit)
         next_pop = []
         attempts = 0
-        while len(next_pop) < pop_size and attempts < pop_size * 6:
+        while len(next_pop) < pop_size and attempts < pop_size * 8:
             attempts += 1
             a = survivors[np.random.randint(len(survivors))]
             b = survivors[np.random.randint(len(survivors))]
-            child, _ = reproduce(a, b, uterus=uterus,
-                                 mutation_rate=mutation_rate,
-                                 generation=gen + 1,
-                                 name="F%d_%d" % (gen + 1, len(next_pop)))
+            if a is b:
+                continue
+            # 随机决定谁是雄性（交配方向不影响遗传，只影响选择谁）
+            if np.random.rand() < 0.5:
+                male, female = a, b
+            else:
+                male, female = b, a
+            male_vit = fits[pop.index(male)] if male in pop else median_vit
+            child, _info = mating.court_and_mate(
+                male, female, male_vitality=male_vit,
+                mutation_rate=mutation_rate,
+                generation=gen + 1,
+                name="F%d_%d" % (gen + 1, len(next_pop)))
             if child is not None:
                 next_pop.append(child)
 
@@ -239,6 +253,14 @@ def main(n_gen=20, pop_size=6, survival_ratio=0.5, mutation_rate=0.15):
         print("  ✅ 遗传多样性下降：有选择压力的痕迹（收敛）。")
     else:
         print("  ➖ 遗传多样性没明显下降：选择压力不够强，或突变补充了变异。")
+    print("\n【求偶统计】")
+    ms = mating.summary()
+    print("  求偶次数 %d | 成功 %d (%.0f%%) | 被拒 %d | 产仔 %d"
+          % (ms["courtships"], ms["success"], ms["success_rate"] * 100,
+             ms["rejected"], ms["mating"]))
+    if ms["fail_at_step"]:
+        print("  卡住的步骤: %s" % ms["fail_at_step"])
+
     print("\n  注：以上每个数字都来自真跑（%d 代 × %d 个体 × %d seed 活力测量）。"
           % (len(history), pop_size, len(SEEDS)))
 
