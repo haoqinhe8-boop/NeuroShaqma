@@ -53,9 +53,20 @@ MODULES = [
 ]
 
 
+# 关键：Windows 上 venv 的 python.exe 是个 45KB 的重定向器，
+# 在它下面 sys.executable 会解析成 **base python**（`pyvenv.cfg` 里的 home）。
+# 这个 venv 的 base 是 uv 装的裸 CPython —— **没有 numpy**。
+# 于是 test_module 起的子进程缺依赖，卡在 import/IO 上（CPU 0%、十分钟无输出，
+# 而同样的模块单独跑只要 2.6 秒）。用 sys.prefix（真正的 venv 路径）拼解释器。
+_PY = os.path.join(sys.prefix, "Scripts", "python.exe") if os.name == "nt" \
+    else os.path.join(sys.prefix, "bin", "python")
+if not os.path.exists(_PY):          # 兜底：非 venv 环境
+    _PY = sys.executable
+
+
 def _run(name):
     r = subprocess.run(
-        [sys.executable, "-X", "utf8", os.path.join(HERE, name + ".py"), "--selftest"],
+        [_PY, "-X", "utf8", os.path.join(HERE, name + ".py"), "--selftest"],
         capture_output=True, text=True, encoding="utf-8", errors="ignore",
         timeout=2400, cwd=HERE,
     )
