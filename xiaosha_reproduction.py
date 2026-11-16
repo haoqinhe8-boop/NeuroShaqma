@@ -340,10 +340,11 @@ class Pedigree:
 # ==================== 繁殖流程 ====================
 
 def reproduce(parent_a, parent_b, uterus=None, mutation_rate=0.12,
-              generation=None, verbose=False):
+              generation=None, verbose=False, name=""):
     """完整的有性生殖流程：排卵 → 排精 → 受精 → 妊娠 → 分娩。
 
     parent_a 提供卵子，parent_b 提供精子（方向不影响遗传，只影响命名）。
+    name 为空时自动按代数+哈希命名；外部实验可指定（如 F3_2）。
     返回 (后代 or None, 过程信息 dict)
     """
     uterus = uterus or Uterus()
@@ -354,10 +355,12 @@ def reproduce(parent_a, parent_b, uterus=None, mutation_rate=0.12,
     sperm = parent_b.testis.spermatogenesis(parent_b.chromosome)
     oviduct = Oviduct()
     zygote = oviduct.fertilize(egg, sperm, label="zygote_F%d" % gen)
+    if not name:
+        name = "F%d_%s" % (gen, str(abs(hash((parent_a.name, parent_b.name, gen))) % 10000))
     child = uterus.gestate(zygote, generation=gen,
                            parents=[parent_a.name, parent_b.name],
                            mutation_rate=mutation_rate,
-                           name="F%d_%s" % (gen, str(abs(hash((parent_a.name, parent_b.name, gen))) % 10000)),
+                           name=name,
                            verbose=verbose)
     info = {
         "egg_from": parent_a.name,

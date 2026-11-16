@@ -1,0 +1,250 @@
+# -*- coding: utf-8 -*-
+"""多代人工选择实验 —— 看小沙能不能"进化"。
+
+达尔文式（不是拉马克式）：不看父母学到了什么，只看**谁活得好、谁生得多**。
+
+流程（每代）：
+  1. 测量：每个个体的活力（固定场景下的发放量）
+  2. 选择：活力最高的前 50% 活下来
+  3. 繁殖：存活者两两配对，有性生殖 + 突变
+  4. 淘汰：其余个体释放（模拟死亡）
+  5. 记录：活力分布、遗传多样性、基因均值
+
+要回答的问题：
+  · 平均活力会上升吗？（选择真的有效？）
+  · 遗传多样性会下降吗？（选择压力的痕迹）
+  · 哪个基因在漂移？（自然选择选了哪个性状）
+
+跑法：python experiments/exp_evolution.py [代数] [种群大小]
+     默认 20 代 × 6 个体（约 6-8 分钟）
+
+**诚实前提**：如果跑出来不上升，那是真实结果，不会去调参凑好看。
+脉冲网络对初始状态敏感，单次活力测量噪声大，所以每个个体测 3 个 seed 取平均。
+"""
+import gc
+import os
+import sys
+import time
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+import numpy as np
+
+from xiaosha_reproduction import (
+    Chromosome, Offspring, Ovary, Testis, Oviduct, Uterus, Pedigree,
+    GENE_NAMES, GENES, random_genome, reproduce,
+)
+from xiaosha_structured import StructuredCortex
+
+SEEDS = (11, 23, 37)          # 活力测量的三个 seed（取平均降噪）
+
+
+def make_founder(seed, name):
+    """造一个奠基者个体。"""
+    rng = np.random.RandomState(seed)
+    chrom = Chromosome(random_genome(rng), random_genome(rng), label=name)
+    p = chrom.phenotype()
+    cx = StructuredCortex(total=int(p["total"]), seed=int(p["seed"]),
+                          dt=float(p["dt"]), v_thresh=float(p["v_thresh"]),
+                          v_reset=float(p["v_reset"]), ref_steps=int(p["ref_steps"]))
+    cx._max_per_region = max(1, int(cx.total * float(p["mpr"])))
+    cx._max_n = max(1, int(cx.total * 0.15))
+    return Offspring(chrom, cx, 0, [], name)
+
+
+def measure(ind):
+    """适应度：3 个 seed 的活力平均。"""
+    return float(np.mean([ind.vitality(steps=10, seed=s) for s in SEEDS]))
+
+
+def diversity(pop):
+    """种群遗传多样性：两两遗传距离的平均。"""
+    if len(pop) < 2:
+        return 0.0
+    ds = []
+    for i in range(len(pop)):
+        for j in range(i + 1, len(pop)):
+            ds.append(pop[i].chromosome.genetic_distance(pop[j].chromosome))
+    return float(np.mean(ds))
+
+
+def gene_means(pop):
+    """种群各基因的平均表现型。"""
+    vals = np.array([ind.chromosome.express_values() for ind in pop])
+    return vals.mean(axis=0)
+
+
+def ascii_curve(values, width=60, height=12, label=""):
+    """画 ASCII 曲线（终端里直接看趋势）。"""
+    if not values:
+        return ""
+    lo, hi = min(values), max(values)
+    if hi - lo < 1e-9:
+        return "  (所有值相同: %.2f)" % lo
+    rows = []
+    for r in range(height, -1, -1):
+        thr = lo + (hi - lo) * r / height
+        line = ""
+        for v in values:
+            lv = (v - lo) / (hi - lo) * height
+            line += "█" if lv >= r else " "
+        rows.append("  %8.1f │%s" % (thr, line))
+    rows.append("           └" + "─" * len(values))
+    rows.append("            " + "".join(str(i % 10) for i in range(len(values))))
+    return "\n".join(rows)
+
+
+def main(n_gen=20, pop_size=6, survival_ratio=0.5, mutation_rate=0.15):
+    t_start = time.time()
+    print("=" * 74)
+    print("小沙多代进化实验 · 人工选择（达尔文式）")
+    print("=" * 74)
+    print("  代数 %d | 种群 %d | 存活率 %.0f%% | 突变率 %.2f | 每代活力测 %d 个 seed"
+          % (n_gen, pop_size, survival_ratio * 100, mutation_rate, len(SEEDS)))
+    print()
+
+    # ---------- 奠基者种群 ----------
+    print("【第 0 代】建立奠基者种群...")
+    pop = []
+    for i in range(pop_size):
+        pop.append(make_founder(1000 + i * 7, "F0_%d" % i))
+        print("  %s  神经元 %6d  v_thresh %.2f  sense_gain %.1f"
+              % (pop[-1].name, pop[-1].cortex.total,
+                 pop[-1].phenotype()["v_thresh"], pop[-1].phenotype()["sense_gain"]))
+
+    history = []
+    uterus = Uterus()
+    n_survivors = max(2, int(round(pop_size * survival_ratio)))
+
+    for gen in range(n_gen):
+        t_gen = time.time()
+        # 1. 测量
+        fits = [measure(ind) for ind in pop]
+        order = np.argsort(fits)[::-1]
+        div = diversity(pop)
+        gm = gene_means(pop)
+        rec = {
+            "gen": gen,
+            "max": float(max(fits)),
+            "mean": float(np.mean(fits)),
+            "min": float(min(fits)),
+            "diversity": div,
+            "gene_means": gm.copy(),
+            "pop_size": len(pop),
+        }
+        history.append(rec)
+        print("  第 %2d 代 | 最大 %7.0f | 平均 %7.0f | 最小 %7.0f | 多样性 %.3f | %d 个体 | %.0fs"
+              % (gen, rec["max"], rec["mean"], rec["min"], div, len(pop), time.time() - t_gen))
+
+        if gen == n_gen - 1:
+            break
+
+        # 2. 选择
+        survivors = [pop[i] for i in order[:n_survivors]]
+
+        # 3. 繁殖（每个存活者的后代填满种群）
+        next_pop = []
+        attempts = 0
+        while len(next_pop) < pop_size and attempts < pop_size * 6:
+            attempts += 1
+            a = survivors[np.random.randint(len(survivors))]
+            b = survivors[np.random.randint(len(survivors))]
+            child, _ = reproduce(a, b, uterus=uterus,
+                                 mutation_rate=mutation_rate,
+                                 generation=gen + 1,
+                                 name="F%d_%d" % (gen + 1, len(next_pop)))
+            if child is not None:
+                next_pop.append(child)
+
+        # 繁殖失败太多就补一个和存活者同基因的（保证种群不灭）
+        while len(next_pop) < pop_size and survivors:
+            a = survivors[np.random.randint(len(survivors))]
+            b = survivors[np.random.randint(len(survivors))]
+            child, _ = reproduce(a, b, uterus=uterus, mutation_rate=0.0,
+                                 generation=gen + 1,
+                                 name="F%d_rescue_%d" % (gen + 1, len(next_pop)))
+            if child is not None:
+                next_pop.append(child)
+            else:
+                break
+
+        # 4. 淘汰（释放内存）
+        for ind in pop:
+            ind.cortex = None
+            ind.alive = False
+        del pop
+        gc.collect()
+        pop = next_pop
+        if not pop:
+            print("  ⚠ 种群灭绝（第 %d 代）" % (gen + 1))
+            break
+
+    # ---------- 报告 ----------
+    elapsed = time.time() - t_start
+    print("\n" + "=" * 74)
+    print("【结果】%d 代，%.0f 秒" % (len(history), elapsed))
+    print("=" * 74)
+
+    means = [h["mean"] for h in history]
+    maxs = [h["max"] for h in history]
+    divs = [h["diversity"] for h in history]
+
+    g0, gN = history[0], history[-1]
+    print("\n  平均活力: %.0f → %.0f  (%+.1f%%)"
+          % (g0["mean"], gN["mean"],
+             (gN["mean"] - g0["mean"]) / max(g0["mean"], 1e-9) * 100))
+    print("  最大活力: %.0f → %.0f  (%+.1f%%)"
+          % (g0["max"], gN["max"],
+             (gN["max"] - g0["max"]) / max(g0["max"], 1e-9) * 100))
+    print("  遗传多样性: %.3f → %.3f  (%+.1f%%)"
+          % (g0["diversity"], gN["diversity"],
+             (gN["diversity"] - g0["diversity"]) / max(g0["diversity"], 1e-9) * 100))
+
+    print("\n【平均活力曲线】")
+    print(ascii_curve(means))
+
+    print("\n【遗传多样性曲线】（选择压力会让它下降）")
+    print(ascii_curve(divs))
+
+    print("\n【基因漂移】（第 0 代 → 最后一代的平均表现型）")
+    print("  %-12s %10s %10s %10s" % ("基因", "第0代", "最后代", "变化"))
+    for i, (name, lo, hi, is_int, desc) in enumerate(GENES):
+        a, b = g0["gene_means"][i], gN["gene_means"][i]
+        span = hi - lo
+        pct = (b - a) / span * 100
+        mark = ""
+        if abs(pct) > 15:
+            mark = " ←明显" + ("上升" if pct > 0 else "下降")
+        print("  %-12s %10.4f %10.4f %+9.1f%%%s" % (name, a, b, pct, mark))
+
+    print("\n【判断】")
+    up = gN["mean"] > g0["mean"] * 1.05
+    down = gN["mean"] < g0["mean"] * 0.95
+    if up:
+        print("  ✅ 平均活力上升 >5%：选择起作用了，基因确实影响适应度。")
+    elif down:
+        print("  ⚠ 平均活力下降 >5%：可能近交衰退（种群太小，多样性耗尽）。")
+    else:
+        print("  ➖ 平均活力变化在 ±5% 以内：这个基因范围里，活力主要由")
+        print("     网络初始状态的随机性决定，而不是基因。这是真实结果。")
+    if gN["diversity"] < g0["diversity"] * 0.9:
+        print("  ✅ 遗传多样性下降：有选择压力的痕迹（收敛）。")
+    else:
+        print("  ➖ 遗传多样性没明显下降：选择压力不够强，或突变补充了变异。")
+    print("\n  注：以上每个数字都来自真跑（%d 代 × %d 个体 × %d seed 活力测量）。"
+          % (len(history), pop_size, len(SEEDS)))
+
+    # 保存曲线数据
+    out = os.path.join(os.path.dirname(os.path.abspath(__file__)), "evolution_history.npz")
+    np.savez(out,
+             means=np.array(means), maxs=np.array(maxs), divs=np.array(divs),
+             gene_means=np.array([h["gene_means"] for h in history]),
+             gene_names=np.array(GENE_NAMES))
+    print("  曲线数据已存: %s" % out)
+    return history
+
+
+if __name__ == "__main__":
+    n = int(sys.argv[1]) if len(sys.argv) > 1 else 20
+    p = int(sys.argv[2]) if len(sys.argv) > 2 else 6
+    main(n_gen=n, pop_size=p)
