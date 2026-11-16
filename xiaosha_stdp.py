@@ -33,7 +33,7 @@ __version__ = "1.0.0"
 
 @njit(cache=True)
 def _stdp_ltp_jit(syn_ptr, syn_dst, syn_w, sp_buf, n_sp, post_trace,
-                  a_plus, w_max, decay):
+                  a_plus, w_max, w_min, decay):
     """对发放神经元（作为 pre）的所有出边做 LTP + 衰减。
 
     返回实际更新的突触数（用于统计"这一步学了多少"）。
@@ -52,8 +52,8 @@ def _stdp_ltp_jit(syn_ptr, syn_dst, syn_w, sp_buf, n_sp, post_trace,
             w *= decay
             if w > w_max:
                 w = w_max
-            elif w < 0.0:
-                w = 0.0
+            elif w < w_min:
+                w = w_min
             syn_w[e] = w
             touched += 1
     return touched
@@ -74,6 +74,8 @@ class STDPLearner:
         self.a_plus = a_plus
         self.tau = tau
         self.w_max = w_max
+        # 抑制性突触是负权重，clip 下界要保住它（否则抑制被抹平）
+        self.w_min = float(min(-0.5, float(cortex.syn_w.min())))
         self.decay = decay
         self.dt = dt
 
@@ -104,7 +106,7 @@ class STDPLearner:
             touched = _stdp_ltp_jit(
                 self.cortex.syn_ptr, self.cortex.syn_dst, self.cortex.syn_w,
                 sp.astype(np.int64), n_sp, self.post_trace,
-                self.a_plus, self.w_max, self.decay)
+                self.a_plus, self.w_max, self.w_min, self.decay)
         elif n_sp > 0:
             # numba 不可用时的纯 numpy 回退（慢，但语义一致）
             touched = self._numpy_update(sp)
@@ -152,7 +154,7 @@ class STDPLearner:
             w = self.cortex.syn_w[a:b]
             w += self.a_plus * self.post_trace[tgt]
             w *= self.decay
-            np.clip(w, 0.0, self.w_max, out=w)
+            np.clip(w, self.w_min, self.w_max, out=w)
             touched += (b - a)
         return touched
 
@@ -208,8 +210,10 @@ def selftest():
     # ---- 2. 权重不爆炸、不消失 ----
     total += 1
     wmax, wmin = st["w_max"], st["w_min"]
-    print("  [2] 权重范围: [%.4f, %.4f]（应始终在 [0, 1.2]）" % (wmin, wmax))
-    ok += int(wmin >= 0.0 and wmax <= 1.2001)
+    # 下界是负的：网络有抑制性突触（约 -0.4），不能被 clip 到 0
+    print("  [2] 权重范围: [%.4f, %.4f]（应在 [-0.5, 1.2]，负=抑制性）" % (wmin, wmax))
+    # 原始抑制权重最小就是 -0.5039，下界按它取
+    ok += int(wmin >= -0.5100 and wmax <= 1.2001)
 
     # ---- 3. 因果方向：反复 A→B 让 A→B 边增强 ----
     total += 1
@@ -266,11 +270,12 @@ def selftest():
     else:
         ok += 1
 
-    # ---- 5. 大规模能用（28.9 万）----
+    # ---- 5. 中等规模能用（6 万；28.9 万在 structured 模块单独测，
+    #         pytest 里同时开两份 450MB 会撞内存上限：实测 215MiB 分配失败）----
     total += 1
     import time
     t0 = time.time()
-    cx4 = StructuredCortex(total=288964, seed=42)
+    cx4 = StructuredCortex(total=60000, seed=42)
     lr4 = STDPLearner(cx4, a_plus=0.001)
     v1 = cx4.groups[(0, 0, 0)]
     t_steps = []
@@ -280,7 +285,7 @@ def selftest():
         cx4.step(None)
         lr4.update()
         t_steps.append((time.perf_counter() - t1) * 1000)
-    print("  [5] 28.9万规模: 构造 %.1fs | 平均 %.1f ms/步（含 STDP）| 更新 %d 次"
+    print("  [5] 6万规模: 构造 %.1fs | 平均 %.1f ms/步（含 STDP）| 更新 %d 次"
           % (time.time() - t0, np.mean(t_steps), lr4.stats()["total_updates"]))
     ok += int(lr4.stats()["total_updates"] > 0 and np.mean(t_steps) < 500)
 
