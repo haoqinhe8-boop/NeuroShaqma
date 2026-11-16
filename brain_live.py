@@ -76,8 +76,14 @@ def main():
     t = 0
     t_start = time.time()
     last_push = 0.0
+    # 限速：原版是"能跑多快跑多快"的无底循环 —— 实测在 288,964 规模下
+    # 吃满一个核 100%、连续跑 38.7 小时（CPU 累计 135,768s），机器明显卡顿。
+    # 直播只需要 30 帧/秒，仿真跑到 30 步/秒就够，多出来的全是白烧的 CPU。
+    TARGET_HZ = 30.0
+    min_period = 1.0 / TARGET_HZ
     # 注意：StructuredCortex 内建自适应阈值（稳态），不需要外层 AGC
     while True:
+        loop_t0 = time.perf_counter()
         obs = make_input(t)
         cx.step(obs)
         t += 1
@@ -101,6 +107,11 @@ def main():
                 "up": round(now - t_start, 1),
             }
             print(json.dumps(out, separators=(",", ":")), flush=True)
+
+        # 限速到 TARGET_HZ：睡掉这一步多出来的时间（不睡就是满核空转）
+        spare = min_period - (time.perf_counter() - loop_t0)
+        if spare > 0:
+            time.sleep(spare)
 
 
 if __name__ == "__main__":
