@@ -238,7 +238,12 @@ class Offspring:
 
         输入必须乘以该个体自己的 sense_gain（否则低敏感度的个体
         照样被强输入激活，"致死基因型"永远测不出来 —— 实测就是这样）。
+
+        关键：这是一次**测试**，不是生命活动 —— 测完必须把 age 复原。
+        否则每测一次活力就白白老 30 步（3 seed × 10 步），
+        接上生态系统后第 1 代就全部"老死"（实测就是这样灭的种）。
         """
+        age_before = getattr(self, "age", 0)
         rng = np.random.RandomState(seed)
         v1_l4 = self.cortex.groups[(0, 0, 0)]
         gain = float(self.phenotype()["sense_gain"]) / 7.0    # 7.0 = 基因范围中值
@@ -248,6 +253,7 @@ class Offspring:
             self.cortex.v[v1_l4] += inp.astype(np.float32)
             sp = self.step(None)
             total += int(sp.size)
+        self.age = age_before      # 测试不算寿命
         return total / max(1, steps)
 
     def summary(self):

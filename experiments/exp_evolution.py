@@ -36,6 +36,7 @@ from xiaosha_reproduction import (
 )
 from xiaosha_structured import StructuredCortex
 from xiaosha_mating import MatingSystem
+from xiaosha_ecosystem import Ecosystem
 
 SEEDS = (11, 23, 37)          # 活力测量的三个 seed（取平均降噪）
 
@@ -103,7 +104,7 @@ def ascii_curve(values, width=60, height=12, label=""):
     return "\n".join(rows)
 
 
-def main(n_gen=20, pop_size=6, survival_ratio=0.5, mutation_rate=0.15):
+def main(n_gen=20, pop_size=6, survival_ratio=0.5, mutation_rate=0.15, use_eco=True):
     t_start = time.time()
     print("=" * 74)
     print("小沙多代进化实验 · 人工选择（达尔文式）")
@@ -124,6 +125,13 @@ def main(n_gen=20, pop_size=6, survival_ratio=0.5, mutation_rate=0.15):
     history = []
     uterus = Uterus()
     mating = MatingSystem(max_courtship_attempts=3)
+    # 生态系统：食物**略紧**（再生只够养活 78% 的个体）→ 真有竞争和饿死。
+    # 之前设 1.1 倍时食物永远够，生态筛选一个人都没杀过（实测），
+    # 那样"资源限制"只是摆设。
+    eco = Ecosystem(food_capacity=pop_size * 30 * 1.2,
+                    food_per_agent=30, regen=pop_size * 30 * 0.78,
+                    max_age=40, senescence_pow=1.5) if use_eco else None
+    eco_log = []
     n_survivors = max(2, int(round(pop_size * survival_ratio)))
 
     for gen in range(n_gen):
@@ -149,7 +157,35 @@ def main(n_gen=20, pop_size=6, survival_ratio=0.5, mutation_rate=0.15):
         if gen == n_gen - 1:
             break
 
-        # 2. 选择
+        # 2a. 生态筛选（如果开启）：衰老 + 饥饿 + 竞争，弱者真的死掉
+        if eco is not None:
+            vit_map = {ind.name: float(f) for ind, f in zip(pop, fits)}
+            before = len(pop)
+            alive, deaths = eco.step(pop, vit_map)
+            causes = {}
+            for _ind, cause, _p in deaths:
+                causes[cause] = causes.get(cause, 0) + 1
+            eco_log.append({"gen": gen, "before": before, "after": len(alive),
+                            "causes": causes, "food": round(eco.food, 1)})
+            if len(alive) < before:
+                print("         生态: %d → %d 存活 (%s) | 食物 %.0f"
+                      % (before, len(alive), causes or "无死亡", eco.food))
+            # 死者真的移除（释放皮层内存）
+            keep_ids = {id(x) for x in alive}
+            for ind in pop:
+                if id(ind) not in keep_ids:
+                    ind.cortex = None
+                    ind.alive = False
+            pop = alive
+            if not pop:
+                print("  ⚠ 种群灭绝（第 %d 代，生态筛选后全灭）" % gen)
+                break
+            # 用残留的 vit_map 重算（不依赖旧的 order 索引）
+            fits = [vit_map.get(ind.name, 0.0) for ind in pop]
+            order = np.argsort(fits)[::-1]
+            n_survivors = max(1, int(round(len(pop) * survival_ratio)))
+
+        # 2b. 选择
         survivors = [pop[i] for i in order[:n_survivors]]
 
         # 3. 繁殖：必须走完求偶序列才能生殖（不再直接 reproduce）
@@ -253,6 +289,16 @@ def main(n_gen=20, pop_size=6, survival_ratio=0.5, mutation_rate=0.15):
         print("  ✅ 遗传多样性下降：有选择压力的痕迹（收敛）。")
     else:
         print("  ➖ 遗传多样性没明显下降：选择压力不够强，或突变补充了变异。")
+    if eco_log:
+        print("\n【生态统计】")
+        total_dead = sum(sum(e["causes"].values()) for e in eco_log)
+        cause_all = {}
+        for e in eco_log:
+            for k, v in e["causes"].items():
+                cause_all[k] = cause_all.get(k, 0) + v
+        print("  总死亡 %d | 分因 %s | 承载力 %d"
+              % (total_dead, cause_all, eco.carrying_capacity()))
+
     print("\n【求偶统计】")
     ms = mating.summary()
     print("  求偶次数 %d | 成功 %d (%.0f%%) | 被拒 %d | 产仔 %d"
@@ -277,4 +323,5 @@ def main(n_gen=20, pop_size=6, survival_ratio=0.5, mutation_rate=0.15):
 if __name__ == "__main__":
     n = int(sys.argv[1]) if len(sys.argv) > 1 else 20
     p = int(sys.argv[2]) if len(sys.argv) > 2 else 6
-    main(n_gen=n, pop_size=p)
+    eco = "--no-eco" not in sys.argv
+    main(n_gen=n, pop_size=p, use_eco=eco)
