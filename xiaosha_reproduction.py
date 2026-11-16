@@ -46,15 +46,26 @@ __version__ = "1.0.0"
 
 # (名字, 最小值, 最大值, 是否整数, 单位/说明)
 GENES = [
-    ("total",      40000,  80000,  True,  "神经元数量"),
-    ("seed",       0,      2**30,  True,  "连接拓扑种子"),
-    ("v_thresh",   0.80,   1.40,   False, "发放阈值"),
-    ("ref_steps",  1,      5,      True,  "不应期步数"),
-    ("dt",         5.0,    15.0,   False, "膜电位时间常数"),
-    ("v_reset",    -0.50,  0.20,   False, "复极化电位"),
-    ("mpr",        0.003,  0.012,  False, "每细胞组限流配额"),
-    ("sense_gain", 3.0,    10.0,   False, "感官输入增益"),
-    ("stdp_a",     0.0005, 0.003,  False, "STDP 学习率"),
+    # ---- 生理基因（决定"怎么动"）----
+    ("total",        40000,  80000, True,  "神经元数量"),
+    ("v_thresh",     0.80,   1.40,  False, "发放阈值"),
+    ("ref_steps",    1,      5,     True,  "不应期步数"),
+    ("dt",           5.0,    15.0,  False, "膜电位时间常数"),
+    ("v_reset",      -0.50,  0.20,  False, "复极化电位"),
+    ("mpr",          0.003,  0.012, False, "每细胞组限流配额"),
+    ("sense_gain",   3.0,    10.0,  False, "感官输入增益"),
+    ("stdp_a",       0.0005, 0.003, False, "STDP 学习率"),
+    # ---- 结构基因（决定"怎么长"，2026-11-16 新增）----
+    # 为什么要这些：原来的 seed 是 0~10亿 的随机种子，繁殖时突变一次就跳
+    # 上亿，子代的神经连接和父母**完全无关**（实测拓扑重合度 0.0000，
+    # 和两个陌生个体一样）。那等于"结构不遗传"，进化只能调参数不能调结构。
+    # 现在改成遗传"发育规则"：每个神经元往外长多少条轴突。
+    # 具体的连接对象仍然随机 —— 这一点符合真实生物学（突触精确位置由
+    # 发育噪声决定），遗传的是密度/规则。
+    ("deg_l4_l23",   20,     80,    True,  "L4→L23 每源轴突数"),
+    ("deg_l23_l5",   10,     40,    True,  "L23→L5 每源轴突数"),
+    ("deg_l5_l4",    5,      25,    True,  "L5→L4 反馈轴突数"),
+    ("path_density", 0.30,   1.20,  False, "区间投射密度系数"),
 ]
 GENE_NAMES = [g[0] for g in GENES]
 N_GENE = len(GENES)
@@ -276,11 +287,18 @@ class Uterus:
             zygote.mutate(rate=mutation_rate)
 
         p = zygote.phenotype()
+        # seed 每次随机（不遗传）：具体连接对象由发育噪声决定，
+        # 遗传的是上面 4 个结构基因（轴突数/密度）。
+        birth_seed = int(np.random.randint(0, 2**30))
         try:
             cx = StructuredCortex(
-                total=int(p["total"]), seed=int(p["seed"]),
+                total=int(p["total"]), seed=birth_seed,
                 dt=float(p["dt"]), v_thresh=float(p["v_thresh"]),
                 v_reset=float(p["v_reset"]), ref_steps=int(p["ref_steps"]),
+                deg_l4_l23=int(p["deg_l4_l23"]),
+                deg_l23_l5=int(p["deg_l23_l5"]),
+                deg_l5_l4=int(p["deg_l5_l4"]),
+                path_density=float(p["path_density"]),
             )
             # 这两个不在构造参数里，构造后覆盖
             cx._max_per_region = max(1, int(cx.total * float(p["mpr"])))
@@ -391,9 +409,13 @@ def selftest():
 
     def mk_individual(chrom, gen=0, name=""):
         p = chrom.phenotype()
-        cx = StructuredCortex(total=int(p["total"]), seed=int(p["seed"]),
+        cx = StructuredCortex(total=int(p["total"]), seed=int(np.random.randint(0, 2**30)),
                               dt=float(p["dt"]), v_thresh=float(p["v_thresh"]),
-                              v_reset=float(p["v_reset"]), ref_steps=int(p["ref_steps"]))
+                              v_reset=float(p["v_reset"]), ref_steps=int(p["ref_steps"]),
+                              deg_l4_l23=int(p["deg_l4_l23"]),
+                              deg_l23_l5=int(p["deg_l23_l5"]),
+                              deg_l5_l4=int(p["deg_l5_l4"]),
+                              path_density=float(p["path_density"]))
         cx._max_per_region = max(1, int(cx.total * float(p["mpr"])))
         return Offspring(chrom, cx, gen, [], name)
 
@@ -401,9 +423,9 @@ def selftest():
     total += 1
     g = random_genome()
     in_range = all(GENES[i][1] <= g[i] <= GENES[i][2] for i in range(N_GENE))
-    print("  [1] 基因组: %d 个位点，全部在合法范围=%s" % (N_GENE, in_range))
+    print("  [1] 基因组: %d 个位点（8 生理 + 4 结构），全部在合法范围=%s" % (N_GENE, in_range))
     print("      %s" % Chromosome(g, g).genotype_str()[:100])
-    ok += int(in_range and N_GENE == 9)
+    ok += int(in_range and N_GENE == 12)
 
     # ---- 2. 减数分裂：长度减半（单倍体只带一半基因）----
     total += 1
@@ -478,10 +500,12 @@ def selftest():
     # 之前的断言要求"必须死"，但在这个基因范围里没有绝对致死组合 ——
     # 改成测"显著更弱"，这才是有意义的适应度差异。
     total += 1
-    weak = Chromosome(
-        paternal=np.array([40000, 1, 1.4, 5, 15.0, 0.2, 0.003, 3.0, 0.0005]),
-        maternal=np.array([40000, 1, 1.4, 5, 15.0, 0.2, 0.003, 3.0, 0.0005]),
-        label="weak")
+    # 12 个位点：8 个生理（全取最差）+ 4 个结构（全取最稀疏）
+    weak_genes = np.array([
+        40000, 1.4, 5, 15.0, 0.2, 0.003, 3.0, 0.0005,   # 生理
+        20, 10, 5, 0.30,                                  # 结构（最稀疏）
+    ])
+    weak = Chromosome(paternal=weak_genes, maternal=weak_genes.copy(), label="weak")
     weak_ind = mk_individual(weak, 0, "Weak")
     # 单次测量噪声大（脉冲网络对初始状态敏感），取 3 个 seed 的平均
     v_weak = float(np.mean([weak_ind.vitality(steps=12, seed=s) for s in (7, 17, 27)]))

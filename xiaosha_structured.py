@@ -84,7 +84,8 @@ class StructuredCortex:
     """结构化脉冲皮层：脑区 × 层 × 细胞类型 × 规则投射。"""
 
     def __init__(self, total=288964, seed=42, dt=10.0,
-                 v_thresh=1.0, v_reset=0.0, ref_steps=2):
+                 v_thresh=1.0, v_reset=0.0, ref_steps=2,
+                 deg_l4_l23=40, deg_l23_l5=20, deg_l5_l4=10, path_density=0.76):
         self.rng = np.random.RandomState(seed)
         self.total = int(total)
         self.dt = dt
@@ -93,6 +94,13 @@ class StructuredCortex:
         self.v_reset = v_reset
         self.ref_steps = ref_steps
         self.n_in = 10
+        # 结构密度参数（可遗传）：这几个数是"发育规则"，
+        # 决定每个神经元往外长多少条轴突，而不是具体长到哪个细胞。
+        # 真实的突触精确位置也不遗传（发育随机），遗传的是密度/规则。
+        self.deg_l4_l23 = int(deg_l4_l23)
+        self.deg_l23_l5 = int(deg_l23_l5)
+        self.deg_l5_l4 = int(deg_l5_l4)
+        self.path_density = float(path_density)
 
         self._assign_cells()
         self._build_connections()
@@ -243,18 +251,18 @@ class StructuredCortex:
         for r in range(len(REGIONS)):
             L4, L23, L5 = self.groups[(r, 0, 0)], self.groups[(r, 1, 0)], self.groups[(r, 2, 0)]
             if L4.size and L23.size:
-                s = np.repeat(L4, 40); d = L23[self.rng.randint(0, L23.size, s.size)]
+                s = np.repeat(L4, self.deg_l4_l23); d = L23[self.rng.randint(0, L23.size, s.size)]
                 add(s, d, 0.250, 4)   # L4 → L23 上行
             if L23.size and L5.size:
-                s = np.repeat(L23, 20); d = L5[self.rng.randint(0, L5.size, s.size)]
+                s = np.repeat(L23, self.deg_l23_l5); d = L5[self.rng.randint(0, L5.size, s.size)]
                 add(s, d, 0.250, 5)   # L23 → L5 下行
             if L5.size and L4.size:
-                s = np.repeat(L5, 10); d = L4[self.rng.randint(0, L4.size, s.size)]
+                s = np.repeat(L5, self.deg_l5_l4); d = L4[self.rng.randint(0, L4.size, s.size)]
                 add(s, d, 0.120, 6)   # L5 → L4 反馈（弱）
 
         # ---- C. 前馈 / 反馈 / 海马投射（区间，特定分工）----
         # 按规模等比缩放（硬编码绝对值会让小网络里区间投射占比失真）
-        PER_PATH = int(self.total * 0.76)
+        PER_PATH = max(1, int(self.total * self.path_density))
 
         def region_out_pool(rname):
             """L5 锥体 = 长程投射细胞（真实皮层里 L5 是主要输出层）。"""

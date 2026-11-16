@@ -40,13 +40,21 @@ SEEDS = (11, 23, 37)          # 活力测量的三个 seed（取平均降噪）
 
 
 def make_founder(seed, name):
-    """造一个奠基者个体。"""
+    """造一个奠基者个体。
+
+    seed 只用于"这一次抽基因"的随机性，不写进基因组 ——
+    具体连接对象由发育噪声决定，遗传的是 4 个结构基因（轴突数/密度）。
+    """
     rng = np.random.RandomState(seed)
     chrom = Chromosome(random_genome(rng), random_genome(rng), label=name)
     p = chrom.phenotype()
-    cx = StructuredCortex(total=int(p["total"]), seed=int(p["seed"]),
+    cx = StructuredCortex(total=int(p["total"]), seed=int(rng.randint(0, 2**30)),
                           dt=float(p["dt"]), v_thresh=float(p["v_thresh"]),
-                          v_reset=float(p["v_reset"]), ref_steps=int(p["ref_steps"]))
+                          v_reset=float(p["v_reset"]), ref_steps=int(p["ref_steps"]),
+                          deg_l4_l23=int(p["deg_l4_l23"]),
+                          deg_l23_l5=int(p["deg_l23_l5"]),
+                          deg_l5_l4=int(p["deg_l5_l4"]),
+                          path_density=float(p["path_density"]))
     cx._max_per_region = max(1, int(cx.total * float(p["mpr"])))
     cx._max_n = max(1, int(cx.total * 0.15))
     return Offspring(chrom, cx, 0, [], name)
