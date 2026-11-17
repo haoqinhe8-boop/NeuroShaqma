@@ -47,6 +47,9 @@ ACT_MOVE, ACT_EAT, ACT_TALK, ACT_TEACH, ACT_BUILD, ACT_WORSHIP = 0, 1, 2, 3, 4, 
 # 有这个概念的小沙，在造出祭坛之后会自发去祭祀、会把这件事讲给同伴听。
 # 至于他们管它叫什么、拜不拜得成、几个世代之后还记不记得，由世界决定。
 SACRED = "造物主"
+EXPLORE_EPS = 0.15        # ε-greedy：15% 的步数完全随机选动作
+FARM_MAX_BOOST = 1.2     # 农业满级时，耕地承载力最多是自然的 2.2 倍
+FARM_STEP = 0.25         # 每耕一次抬高多少（乘农业熟练度）
 ALTAR_MINERAL = 2.5       # 建一座祭坛需要的矿物（山脚 4.5 够建一座）
 WORSHIP_RANGE = 2         # 在祭坛几格内算"在祭祀"
 WORSHIP_ENERGY = 4.0      # 祭祀带来的能量（"神迹"的实际好处）
@@ -86,9 +89,15 @@ class World:
 
         # 资源
         self.food = np.zeros((self.size, self.size), dtype=np.float32)
+        # 耕地承载力：每格食物再生的上限。初始 = 该地形的自然上限；
+        # 小沙种地会把这块地（和周围 8 格）的上限抬高。
+        # 没有这个数组的话 regrow() 每步都按 MAX_FOOD 封顶，
+        # 农业抬高多少就被压回去多少 —— 实测农业知识到了 1.0，产量毫无变化。
+        self.farm_cap = np.zeros((self.size, self.size), dtype=np.float32)
         for kind, mx in MAX_FOOD.items():
             m = terrain == kind
             self.food[m] = float(mx * 0.6)
+            self.farm_cap[m] = float(mx)
 
         # 矿物（造建筑/工具用，稀有）
         self.minerals = np.zeros((self.size, self.size), dtype=np.float32)
@@ -137,10 +146,10 @@ class World:
         return PASSABLE[int(self.terrain[x, y])]
 
     def regrow(self, rate=1.0):
-        """食物再生（按地形基础产出）。"""
+        """食物再生（按地形基础产出，上限是耕地承载力而不是自然上限）。"""
         for kind, base in BASE_FOOD.items():
             m = self.terrain == kind
-            self.food[m] = np.minimum(MAX_FOOD[kind], self.food[m] + base * rate)
+            self.food[m] = np.minimum(self.farm_cap[m], self.food[m] + base * rate)
 
     def harvest(self, x, y, amount):
         """采集。返回实际采到的量。"""
@@ -305,7 +314,7 @@ class Agent:
             nx, ny = self.x + dx, self.y + dy
             if 0 <= nx < self.world.size and 0 <= ny < self.world.size:
                 mx = MAX_FOOD[int(self.world.terrain[nx, ny])]
-                obs[i] = self.world.food[nx, ny] / max(mx, 1e-9)
+                obs[i] = min(1.0, self.world.food[nx, ny] / max(mx, 1e-9))
         # 8-11 邻居密度（四象限）
         n_near = [0, 0, 0, 0]
         n_in_tribe = 0
@@ -337,7 +346,18 @@ class Agent:
         scores = self.brain.forward(obs)
         # 加一点随机探索
         scores = scores + self.brain.rng.randn(scores.size) * 0.15
-        act = int(np.argmax(scores))
+
+        # ε-greedy：小概率完全随机选一个动作，不管脑子怎么说。
+        # 没有这一条，每个个体都会被 w_out 的随机初始值锁死在一个动作上：
+        # 实测有 300 步 300 次全是"采集"的个体，也有 80% 时间只会"教学"的先知。
+        # 脑子学不动（一步失败只改变权重 0.0002，而初始权重散布 0.1，寿命只有 300 步），
+        # 所以它会带着同一个偏好活到死 —— 会种地的人从不选"建造"，农业永远用不上。
+        # ε-greedy 是强化学习的标准探索项，在动物身上也真实存在（行为变异/试错），
+        # 它保证每个动作都会被采到，学习才有输入。
+        if self.brain.rng.rand() < EXPLORE_EPS:
+            act = int(self.brain.rng.randint(scores.size))
+        else:
+            act = int(np.argmax(scores))
         sp_mask = (self.brain.post_trace > 0.5).astype(np.float32)
 
         reward = 0.0
@@ -493,58 +513,96 @@ class Agent:
         return 0.35 + bonus
 
     def _do_build(self):
-        """建造。
+        """建造：在「建祭坛」和「种地」之间按熟练度选。
 
-        优先级：
-          1. 会「石头 + 建造」且脚下有矿物 → 先建祭坛（对造物主的崇拜先于农业）
-          2. 会「农业」→ 提高本地食物上限
+        原来的顺序是"祭坛优先，而且每条路径都 return"，于是凡是会
+        「石头 + 建造」的人（建造是先天基础技能，均值 0.43，几乎所有人都会）
+        每次建造都在盖庙或找矿，永远走不到种地那一段 ——
+        实测耕地格数一直是 0，余粮不出现，国家也就无从谈起。
+        现在按熟练度选：两个都会的人大部分时间务农，三分之一时间还去盖庙。
         """
-        # --- 祭坛 ---
-        # 门槛从 0.30/0.22 降到 0.15/0.10：每个小沙只随机带 1-2 个额外概念，
-        # 同时会「石头+建造」的人极少，实测全图只建出 1 座祭坛。
-        if (self.knowledge.get("石头", 0.0) > 0.15
-                and self.knowledge.get("建造", 0.0) > 0.10):
-            if (self.world.minerals[self.x, self.y] >= ALTAR_MINERAL
-                    and not self.world.altars_near(self.x, self.y, r=0)):
-                if self.world.build_altar(self.x, self.y, self):
-                    self.knowledge[SACRED] = min(
-                        1.0, self.knowledge.get(SACRED, 0.0) + 0.06)
-                    self.stats["altars"] = self.stats.get("altars", 0) + 1
-                    return 0.6
-            else:
-                # 寻矿：为了建神庙，人自己会去找石料。
-                # 没有这条，小沙只会在草地上随机游走 —— 实测 204 个矿区格子里
-                # 只站着 1 个人，祭坛永远建不出来。
-                best = None
-                for dx in range(-7, 8):
-                    for dy in range(-7, 8):
-                        nx, ny = self.x + dx, self.y + dy
-                        if not (0 <= nx < self.world.size and 0 <= ny < self.world.size):
-                            continue
-                        if (self.world.passable(nx, ny)
-                                and self.world.minerals[nx, ny] >= ALTAR_MINERAL):
-                            d2 = dx * dx + dy * dy
-                            if best is None or d2 < best[0]:
-                                best = (d2, dx, dy)
-                if best is not None:
-                    _d2, dx, dy = best
-                    sx = 1 if dx > 0 else (-1 if dx < 0 else 0)
-                    sy = 1 if dy > 0 else (-1 if dy < 0 else 0)
-                    nx, ny = self.x + sx, self.y + sy
-                    if self.world.passable(nx, ny):
-                        self.x, self.y = nx, ny
-                        return 0.15
+        can_altar = (self.knowledge.get("石头", 0.0) > 0.15
+                     and self.knowledge.get("建造", 0.0) > 0.10)
+        can_farm = self.knowledge.get("农业", 0.0) >= 0.3
 
+        if can_altar and can_farm:
+            first_farm = self.brain.rng.rand() < 0.65
+        else:
+            first_farm = can_farm
+
+        for want_farm in ((True, False) if first_farm else (False, True)):
+            r = self._try_farm() if want_farm else self._try_altar()
+            if r is not None:
+                return r
+        return -0.01
+
+    def _try_altar(self):
+        """建祭坛，或者为了建祭坛去找矿。做不到返回 None（交给别的技能）。"""
+        if not (self.knowledge.get("石头", 0.0) > 0.15
+                and self.knowledge.get("建造", 0.0) > 0.10):
+            return None
+        if (self.world.minerals[self.x, self.y] >= ALTAR_MINERAL
+                and not self.world.altars_near(self.x, self.y, r=0)):
+            if self.world.build_altar(self.x, self.y, self):
+                self.knowledge[SACRED] = min(
+                    1.0, self.knowledge.get(SACRED, 0.0) + 0.06)
+                self.stats["altars"] = self.stats.get("altars", 0) + 1
+                return 0.6
+            return None
+        # 寻矿：为了建神庙，人自己会去找石料。
+        # 没有这条，小沙只会在草地上随机游走 —— 实测 204 个矿区格子里
+        # 只站着 1 个人，祭坛永远建不出来。
+        best = None
+        for dx in range(-7, 8):
+            for dy in range(-7, 8):
+                nx, ny = self.x + dx, self.y + dy
+                if not (0 <= nx < self.world.size and 0 <= ny < self.world.size):
+                    continue
+                if (self.world.passable(nx, ny)
+                        and self.world.minerals[nx, ny] >= ALTAR_MINERAL):
+                    d2 = dx * dx + dy * dy
+                    if best is None or d2 < best[0]:
+                        best = (d2, dx, dy)
+        if best is None:
+            return None
+        _d2, dx, dy = best
+        sx = 1 if dx > 0 else (-1 if dx < 0 else 0)
+        sy = 1 if dy > 0 else (-1 if dy < 0 else 0)
+        nx, ny = self.x + sx, self.y + sy
+        if self.world.passable(nx, ny):
+            self.x, self.y = nx, ny
+            return 0.15
+        return None
+
+    def _try_farm(self):
+        """把脚下和周围 8 格垦成耕地。不会农业返回 None。"""
         key = "农业"
         lvl = self.knowledge.get(key, 0.0)
-        if self.world.minerals[self.x, self.y] < 1.0:
-            return -0.02
         if lvl < 0.3:
-            return -0.01
-        self.world.minerals[self.x, self.y] -= 1.0
+            return None
         t = int(self.world.terrain[self.x, self.y])
+        if t in (WATER, MOUNTAIN):
+            return None
+        # 种地要的是土地，不是石头 —— 原来要求"脚下有矿物 >= 1.0"，
+        # 于是只有站在山脚的人能种地，种一次还得挖走一块石头，不合常理。
+        # 一个人耕不了整片地，但一片田能养活一家人 —— 这就是"余粮"的来源。
+        natural = float(MAX_FOOD[t])
+        cap_max = natural * (1.0 + FARM_MAX_BOOST * lvl)
+        n = 0
+        for dx in range(-1, 2):
+            for dy in range(-1, 2):
+                nx, ny = self.x + dx, self.y + dy
+                if not (0 <= nx < self.world.size and 0 <= ny < self.world.size):
+                    continue
+                if int(self.world.terrain[nx, ny]) in (WATER, MOUNTAIN):
+                    continue
+                self.world.farm_cap[nx, ny] = min(
+                    cap_max, self.world.farm_cap[nx, ny] + FARM_STEP * lvl)
+                n += 1
+        if not n:
+            return None
         self.world.food[self.x, self.y] = min(
-            MAX_FOOD[t] * (1.0 + 0.5 * lvl), self.world.food[self.x, self.y] + 2.0 * lvl)
+            cap_max, self.world.food[self.x, self.y] + 2.0 * lvl)
         self.stats["built"] += 1
         self.knowledge[key] = min(1.0, lvl + 0.02)
         return 0.4

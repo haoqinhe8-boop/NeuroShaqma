@@ -236,6 +236,27 @@ class Civilization:
             if try_convert(b, a, self.rng)[0]:
                 n += 1
 
+            # 同伴学习：把自己会的一门手艺传给邻居。
+            # 知识原来只能靠「父母教孩子」传（25% 概率继承 10%），
+            # 所以任何稀有技能一代就灭绝 —— 实测"农业"熟练度从 0.01 掉到 0.00，
+            # 全图只有 7 格地被耕过，余粮永远不出现，国家也就无从谈起。
+            # 真实的技能传播主要是横向的：学徒、模仿、一起干活。
+            #
+            # 注意：不能只传「最拿手的那一门」。采集是天生的 0.5-0.8，永远是最大值，
+            # 于是农业/建造/工具这些后来学会的东西一辈子传不出去 —— 我第一版
+            # 就是这么写的，结果耕地格数从 7 直接掉到 0。
+            for (src, dst) in ((a, b), (b, a)):
+                if not src.knowledge or dst.knowledge is None:
+                    continue
+                skilled = [k for k, v in src.knowledge.items() if v > SKILL_GATE]
+                if not skilled:
+                    continue
+                k = skilled[self.rng.randint(len(skilled))]
+                v = src.knowledge[k]
+                if dst.knowledge.get(k, 0.0) < v * 0.9 and self.rng.rand() < 0.22:
+                    dst.knowledge[k] = v * 0.85
+                    n += 1
+
             # 从众效应：周围信的人越多，自己也越容易信。
             # 这是真实的社会机制（Asch 1951 的从众实验、宗教社群的代际延续），
             # 不是为了让结果好看而加的补丁 —— 没有它，宗教只能靠口耳相传，
