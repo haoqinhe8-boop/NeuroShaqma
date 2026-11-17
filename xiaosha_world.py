@@ -334,12 +334,11 @@ class Agent:
             reward = -0.01
 
         # 学习（STDP + 奖励调制）
-        # 原来写的是 `reward if abs(reward) > 0.05 else 0.0`，
-        # 意思是"小失败不算数"——但大多数失败回报就是 -0.01（教学没人可教、
-        # 交流没人可说）。结果脑子里那个动作的权重永远不会被压低，
-        # 实测一个个体 200 步里 159 次死选"教学"（80%），因为它从来没学过
-        # 这个动作是没用的。现在任何非零反馈都学，失败会被真正惩罚。
-        self.brain.learn(sp_mask, act, reward if reward != 0.0 else 0.0)
+        # 注意：以前是 `reward if abs(reward) > 0.05 else 0.0`，等于"小失败不算数"。
+        # 但最常见的失败回报就是 -0.01（教学没人可教、交流没人可说），
+        # 于是那个动作的权重永远压不下来 —— 实测一个个体 200 步里 159 次
+        # 死选"教学"（80%），因为它从没学过这动作没用。现在任何反馈都学。
+        self.brain.learn(sp_mask, act, reward)
         self.last_reward = reward
         self.last_sp = sp_mask
         self.age += 1
