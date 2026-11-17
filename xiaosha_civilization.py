@@ -32,7 +32,7 @@ import numpy as np
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from xiaosha_world import SACRED
+from xiaosha_world import SACRED, neighbours
 from xiaosha_world import (
     World, Agent, MiniBrain, DIRS, TERRAIN_NAMES,
     ACT_MOVE, ACT_EAT, ACT_TALK, ACT_TEACH, ACT_BUILD,
@@ -226,12 +226,7 @@ class Civilization:
         n = 0
         for idx in starters:
             a = self.agents[int(idx)]
-            near = []
-            for dx in range(-radius, radius + 1):
-                for dy in range(-radius, radius + 1):
-                    if dx == 0 and dy == 0:
-                        continue
-                    near.extend(by_pos.get((a.x + dx, a.y + dy), []))
+            near = neighbours(by_pos, a.x, a.y, radius, same_tile=False)
             if not near:
                 continue
             b = near[self.rng.randint(len(near))]

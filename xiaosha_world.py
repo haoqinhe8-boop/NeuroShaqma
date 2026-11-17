@@ -158,6 +158,29 @@ class World:
                 "step": self.step_count}
 
 
+# ==================== 邻居查询 ====================
+
+def neighbours(by_pos, x, y, r=2, exclude=None, same_tile=True):
+    """±r 格内的其他个体。
+
+    这段 5x5 循环原来在三个地方各写了一遍（交流、教学、本能社交），
+    改一次半径就要改三处 —— 抽出来。
+
+    same_tile: 是否包含自己站的那一格。默认 True（站在同格的人当然能交谈），
+    但 _ambient_social 原本是跳过同格的，为了这次纯重构不改动任何数字，
+    那边显式传 False。将来如果要统一成 True，那是一次独立的行为改动，
+    会改变所有随机序列，不能混在重构里。
+    """
+    out = []
+    for dx in range(-r, r + 1):
+        for dy in range(-r, r + 1):
+            if same_tile or dx or dy:
+                for o in by_pos.get((x + dx, y + dy), ()):
+                    if o is not exclude:
+                        out.append(o)
+    return out
+
+
 # ==================== 大脑 ====================
 
 class MiniBrain:
@@ -386,13 +409,7 @@ class Agent:
         # 交谈范围 ±2 格，不是同一格。
         # 实测：350 人散在 40x40=1600 格 = 0.22 人/格，要求"站在同一格"
         # 等于永远没人能说话（累计 talk 动作 0 次，传播事件 0 次）。
-        # 真实世界里人也不是脸贴脸才叫说话。
-        others = []
-        for dx in (-2, -1, 0, 1, 2):
-            for dy in (-2, -1, 0, 1, 2):
-                for o in agents_by_pos.get((self.x + dx, self.y + dy), []):
-                    if o is not self:
-                        others.append(o)
+        others = neighbours(agents_by_pos, self.x, self.y, 2, self)
         if not others:
             return -0.01
         other = others[self.brain.rng.randint(len(others))]
@@ -431,12 +448,8 @@ class Agent:
         范围 ±2 格，不是同一格 —— 父母和孩子每步都在移动，要求站同一格
         实测几乎教不到（知识代际流失到只剩 1 项）。
         """
-        kids = []
-        for dx in (-2, -1, 0, 1, 2):
-            for dy in (-2, -1, 0, 1, 2):
-                for o in agents_by_pos.get((self.x + dx, self.y + dy), []):
-                    if o is not self and self.id in o.parents:
-                        kids.append(o)
+        kids = [o for o in neighbours(agents_by_pos, self.x, self.y, 2, self)
+                if self.id in o.parents]
         if not kids or not self.knowledge:
             return -0.01
         kid = kids[0]
