@@ -219,9 +219,8 @@ class Civilization:
 
         if not self.agents:
             return 0
-        k = max(1, len(self.agents) // 3)
-        k = min(k, len(self.agents))
-        starters = self.rng.choice(len(self.agents), k, replace=False)
+        n_starters = max(1, len(self.agents) // 3)
+        starters = self.rng.choice(len(self.agents), n_starters, replace=False)
 
         n = 0
         for idx in starters:
@@ -245,16 +244,14 @@ class Civilization:
             # 注意：不能只传「最拿手的那一门」。采集是天生的 0.5-0.8，永远是最大值，
             # 于是农业/建造/工具这些后来学会的东西一辈子传不出去 —— 我第一版
             # 就是这么写的，结果耕地格数从 7 直接掉到 0。
-            for (src, dst) in ((a, b), (b, a)):
-                if not src.knowledge or dst.knowledge is None:
-                    continue
-                skilled = [k for k, v in src.knowledge.items() if v > SKILL_GATE]
+            for src, dst in ((a, b), (b, a)):
+                skilled = [s for s, v in src.knowledge.items() if v > SKILL_GATE]
                 if not skilled:
                     continue
-                k = skilled[self.rng.randint(len(skilled))]
-                v = src.knowledge[k]
-                if dst.knowledge.get(k, 0.0) < v * 0.9 and self.rng.rand() < 0.22:
-                    dst.knowledge[k] = v * 0.85
+                skill = skilled[self.rng.randint(len(skilled))]
+                v = src.knowledge[skill]
+                if dst.knowledge.get(skill, 0.0) < v * 0.9 and self.rng.rand() < 0.22:
+                    dst.knowledge[skill] = v * 0.85
                     n += 1
 
             # 从众效应：周围信的人越多，自己也越容易信。
