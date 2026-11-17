@@ -76,7 +76,7 @@ def snapshot(civ, gen):
 
 
 def main(gens=20, pop=100, every=5, seed=42):
-    civ = Civilization(size=60, n_agents=pop, seed=seed, verbose=False)
+    civ = Civilization(size=40, n_agents=pop, seed=seed, verbose=False)
     snaps = []
     print("跑 %d 代，每 %d 代存一张快照..." % (gens, every))
     for g in range(gens):
