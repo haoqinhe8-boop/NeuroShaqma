@@ -17,6 +17,8 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from xiaosha_civilization import Civilization
 from xiaosha_world import SACRED, TERRAIN_NAMES
+from xiaosha_memetics import (plant_prophet, remove_prophet, reset_lineage,
+                              current_vocab)
 
 OUT = r"D:\Apps\MyModel\chat\public\civ-data.json"
 
@@ -77,6 +79,11 @@ def snapshot(civ, gen):
 
 def main(gens=20, pop=100, every=5, seed=42):
     civ = Civilization(size=40, n_agents=pop, seed=seed, verbose=False)
+    # 现在信仰只能靠传播：没有先知就一个人都不信。
+    # 所以导出快照时必须先播一个种子，否则图上永远是 0 个信徒。
+    reset_lineage()
+    _prophet = plant_prophet(civ, np.random.RandomState(seed), "造物主")
+    _prophet_removed = False
     snaps = []
     print("跑 %d 代，每 %d 代存一张快照..." % (gens, every))
     for g in range(gens):

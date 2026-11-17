@@ -147,7 +147,13 @@ def try_convert(speaker, listener, rng=None):
     s_belief = speaker.knowledge.get(SACRED, 0.0)
     if s_belief < BELIEVE_GATE:
         return False, None
-    if listener.knowledge.get(SACRED, 0.0) >= RECEIVE_GATE:
+    # 只要听众明显比说者浅，就还能被强化。
+    # 原来写的是 `if listener >= RECEIVE_GATE(0.25): return False` ——
+    # 一个人被转化一次（0.15 -> 0.32）之后就永远关上耳朵，
+    # 此后再也听不进任何话，信仰只能随代际衰减。这是它必然归零的第二个原因。
+    # 真实的人可以反复被同一件事说服，越听越信。
+    l_belief = listener.knowledge.get(SACRED, 0.0)
+    if l_belief >= s_belief - 0.10:
         return False, None
 
     src_name = getattr(speaker, "meme_name", SACRED)
@@ -164,8 +170,15 @@ def try_convert(speaker, listener, rng=None):
     if rng.rand() > accept:
         return False, None
 
+    # 信仰向说者靠拢，而不是被覆盖。
+    # 原来是 `listener = s_belief * (0.65~0.85)` —— 每次听说都把旧信仰扔掉重设，
+    # 于是信仰永远在"传一代衰减 25%"里打转：实测 283 次传播、51 种叫法，
+    # 信徒比例却从 7.7% 掉到 4.0%，最后一代就归零。
+    # 真实宗教是靠**反复听说**维持的（礼拜、代代相传），不是听一次就换一次脑子。
+    # 现在每次听说是"向说者靠近 25%"：听两三次才成为信徒，但一旦成了就越来越稳。
+    old = listener.knowledge.get(SACRED, 0.0)
     listener.knowledge[SACRED] = float(np.clip(
-        s_belief * (0.65 + rng.rand() * 0.2), 0.0, 1.0))
+        old + (s_belief - old) * (0.22 + rng.rand() * 0.08), 0.0, 1.0))
     listener.meme_name = new_name
     listener.meme_origin = getattr(speaker, "meme_origin", speaker.name)
     listener.meme_gen = getattr(speaker, "meme_gen", 0) + 1
@@ -200,6 +213,21 @@ def _log_lineage(speaker, listener, name, rng):
         "mutated": name != src,
     })
     VOCAB[name] = VOCAB.get(name, 0) + 1
+
+
+def current_vocab(agents, min_users=1):
+    """当前活着的人各用哪个叫法（不是累计说过多少次）。
+
+    vocab_stats() 统计的是历史上所有传播事件的累计，一个人一辈子说 50 次
+    "造物主"就会被记 50 次 —— 用它描述"现在的语言分布"会误导。
+    这里是真实人口普查：活着的人各叫什么。
+    """
+    from collections import Counter
+    c = Counter(getattr(a, "meme_name", "(无名)") for a in agents
+                if a.knowledge.get(SACRED, 0.0) > 0.10)
+    items = [(k, v) for k, v in c.items() if v >= min_users]
+    items.sort(key=lambda kv: -kv[1])
+    return items
 
 
 def vocab_stats(min_users=1):

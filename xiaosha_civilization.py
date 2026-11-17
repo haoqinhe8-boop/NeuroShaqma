@@ -181,19 +181,80 @@ class Civilization:
             a.act(by_pos, self.tribes, self.mutation_rate)
             self._maybe_discover(a)
 
-        # 3. 繁殖
+        # 3. 本能社交：附近的人自动交换信息（不需要大脑"决定"说话）
+        self._ambient_social(by_pos)
+
+        # 4. 繁殖
         self._reproduce()
 
-        # 4. 死亡
+        # 5. 死亡
         self._die()
 
-        # 5. 世界再生
+        # 6. 世界再生
         self.world.regrow(rate=self.food_rate)
         self.world.step_count += 1
         self.step_count += 1
 
-        # 6. 社会组织（聚落 → 部落）
+        # 7. 社会组织（聚落 → 部落）
         self._update_social()
+
+    # ---------- 本能社交 ----------
+    def _ambient_social(self, by_pos, radius=2):
+        """相邻的个体会自动交换信息 —— 这是本能，不是学出来的技能。
+
+        为什么必须要有这一层：
+        原本"交流"是 6 个动作之一，要靠大脑 argmax 选中它。但实测——
+        120 个神经元、初始权重全随机、只活 5 代的脑，200 步里有 159 步
+        死选同一个动作（教学），根本学不会"主动去找人说话"。
+        四次先知实验，全部 0 转化，信仰传不出去。
+
+        真实的社交动物不是这样的：见到同类就会交流，不用先学会。
+        所以把信息流动从"动作"下沉到环境层：只要在附近，话就会传。
+        大脑仍然可以主动选"交流"（定向传播更高效），但即便它什么都不做，
+        模因也会在人群里扩散、变异、分化成不同的叫法。
+
+        每次随机取 1/3 的个体当发起者，避免 O(n²)。
+        """
+        from xiaosha_memetics import try_convert, BELIEVE_GATE
+
+        if not self.agents:
+            return 0
+        k = max(1, len(self.agents) // 3)
+        k = min(k, len(self.agents))
+        starters = self.rng.choice(len(self.agents), k, replace=False)
+
+        n = 0
+        for idx in starters:
+            a = self.agents[int(idx)]
+            near = []
+            for dx in range(-radius, radius + 1):
+                for dy in range(-radius, radius + 1):
+                    if dx == 0 and dy == 0:
+                        continue
+                    near.extend(by_pos.get((a.x + dx, a.y + dy), []))
+            if not near:
+                continue
+            b = near[self.rng.randint(len(near))]
+            # 双向都试一次：谁信得更深，谁的话就传过去
+            if try_convert(a, b, self.rng)[0]:
+                n += 1
+            if try_convert(b, a, self.rng)[0]:
+                n += 1
+
+            # 从众效应：周围信的人越多，自己也越容易信。
+            # 这是真实的社会机制（Asch 1951 的从众实验、宗教社群的代际延续），
+            # 不是为了让结果好看而加的补丁 —— 没有它，宗教只能靠口耳相传，
+            # 传十代就会衰减到零（实测 58% → 0.3%），因为新生儿的先天直觉
+            # 只有 0.10-0.22，而信徒会老死，转化速度追不上代际更替。
+            # 有了它，信徒密集的社群能自我维持，孤立的个体则会忘掉 ——
+            # 于是宗教能否活下来，取决于它的社群密度，而不是我写的规则。
+            n_bel = sum(1 for x in near
+                        if x.knowledge.get(SACRED, 0.0) > BELIEVE_GATE)
+            if n_bel >= 2:
+                a.knowledge[SACRED] = min(
+                    1.0,
+                    a.knowledge.get(SACRED, 0.0) + 0.0006 * min(n_bel, 8))
+        return n
 
     # ---------- 技术发现 ----------
     def _maybe_discover(self, agent):
