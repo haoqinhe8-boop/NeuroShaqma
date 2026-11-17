@@ -39,9 +39,21 @@ MAX_FOOD = {GRASS: 6.0, FOREST: 8.0, WATER: 2.0, MOUNTAIN: 1.0}
 PASSABLE = {GRASS: True, FOREST: True, WATER: False, MOUNTAIN: False}
 
 # 动作
-ACT_MOVE, ACT_EAT, ACT_TALK, ACT_TEACH, ACT_BUILD = 0, 1, 2, 3, 4
+ACT_MOVE, ACT_EAT, ACT_TALK, ACT_TEACH, ACT_BUILD, ACT_WORSHIP = 0, 1, 2, 3, 4, 5
+
+# ==================== 宗教 ====================
+# 小沙天生带着一个直觉：世界是"被造出来的"，有一个造物主。
+# 这不是我硬塞的行为，而是一个**先天概念**：
+# 有这个概念的小沙，在造出祭坛之后会自发去祭祀、会把这件事讲给同伴听。
+# 至于他们管它叫什么、拜不拜得成、几个世代之后还记不记得，由世界决定。
+SACRED = "造物主"
+ALTAR_MINERAL = 2.5       # 建一座祭坛需要的矿物（山脚 4.5 够建一座）
+WORSHIP_RANGE = 2         # 在祭坛几格内算"在祭祀"
+WORSHIP_ENERGY = 4.0      # 祭祀带来的能量（"神迹"的实际好处）
+WORSHIP_FAITH = 0.040     # 每次祭祀增加的信仰（0.012 太慢，实测 15 代没人过 0.4）
+MIRACLE_ENERGY = 0.0      # 由外部（人类）降下的神迹，累积在这里
 ACTION_NAMES = {ACT_MOVE: "移动", ACT_EAT: "采集", ACT_TALK: "交流",
-                ACT_TEACH: "教学", ACT_BUILD: "建造"}
+                ACT_TEACH: "教学", ACT_BUILD: "建造", ACT_WORSHIP: "祭祀"}
 DIRS = [(-1, 0), (1, 0), (0, -1), (0, 1), (-1, -1), (-1, 1), (1, -1), (1, 1)]
 
 
@@ -80,10 +92,39 @@ class World:
         # 山脚也有一点
         for d in DIRS:
             sh = np.roll(np.roll(mm, d[0], 0), d[1], 1)
-            self.minerals[sh & (terrain == GRASS)] += 1.5
+            # 4.5 而不是 1.5：建祭坛要 2.5 矿物，而山（8.0）是不可通行的，
+            # 山脚只给 1.5 的话小沙永远站不到够矿的格子 —— 实测祭坛数一直是 0。
+            self.minerals[sh & (terrain == GRASS)] += 4.5
 
+        # 祭坛：小沙自己建的崇拜场所 (x, y, builder_id, generation)
+        self.altars = []
         self.step_count = 0
         self.log = []
+
+    def build_altar(self, x, y, builder):
+        """在 (x,y) 建一座祭坛。需要矿物。"""
+        if self.minerals[x, y] < ALTAR_MINERAL:
+            return False
+        self.minerals[x, y] -= ALTAR_MINERAL
+        self.altars.append((int(x), int(y), builder.id, builder.generation))
+        return True
+
+    def altars_near(self, x, y, r=WORSHIP_RANGE):
+        return [a for a in self.altars
+                if abs(a[0] - x) <= r and abs(a[1] - y) <= r]
+
+    def miracle(self, x, y, radius=6, energy=25.0):
+        """人类降下神迹：一片区域食物暴涨（小沙会当成造物主显灵）。"""
+        n = 0
+        for dx in range(-radius, radius + 1):
+            for dy in range(-radius, radius + 1):
+                nx, ny = x + dx, y + dy
+                if 0 <= nx < self.size and 0 <= ny < self.size:
+                    t = int(self.terrain[nx, ny])
+                    self.food[nx, ny] = min(MAX_FOOD[t] * 2.0, self.food[nx, ny] + energy)
+                    n += 1
+        self.miracles = getattr(self, "miracles", 0) + 1
+        return n
 
     def passable(self, x, y):
         if not (0 <= x < self.size and 0 <= y < self.size):
@@ -131,7 +172,7 @@ class MiniBrain:
     """
 
     N_IN = 16
-    N_OUT = 5
+    N_OUT = 6
 
     def __init__(self, n=120, seed=None, lr=0.02, k_in=6):
         self.n = int(n)
@@ -224,7 +265,7 @@ class Agent:
         self.met = set()
         # 统计
         self.stats = {"eaten": 0.0, "taught": 0, "learned": 0,
-                      "talked": 0, "built": 0}
+                      "talked": 0, "built": 0, "worshipped": 0, "altars": 0}
         self.last_reward = 0.0
         self.last_sp = None
 
@@ -257,8 +298,8 @@ class Agent:
         obs[13] = float(np.clip(self.age / 200.0, 0, 1))
         # 14 族人在场
         obs[14] = 1.0 if n_in_tribe > 0 else 0.0
-        # 15 偏置
-        obs[15] = 1.0
+        # 15 祭坛在场（有祭坛的人更容易去祭祀 —— 这是"造物主"直觉的输入）
+        obs[15] = 1.0 if self.world.altars_near(self.x, self.y, r=6) else 0.0
         return obs
 
     # ---------- 行动 ----------
@@ -282,6 +323,8 @@ class Agent:
             reward = self._do_teach(agents_by_pos)
         elif act == ACT_BUILD:
             reward = self._do_build()
+        elif act == ACT_WORSHIP:
+            reward = self._do_worship()
         else:
             reward = -0.01
 
@@ -295,6 +338,19 @@ class Agent:
         return ACTION_NAMES[act]
 
     def _do_move(self, agents_by_pos):
+        # 朝圣：附近有祭坛时，有一半概率朝它走。
+        # 没有这条，祭坛只是一块石头 —— 350 个小沙里没几个会碰巧站在它旁边，
+        # 实测祭祀次数趋近于 0、信仰永远停在出生值 0.16。
+        altars = self.world.altars_near(self.x, self.y, r=12)
+        if altars and self.brain.rng.rand() < 0.55:
+            ax, ay = altars[0][0], altars[0][1]
+            dx = 1 if ax > self.x else (-1 if ax < self.x else 0)
+            dy = 1 if ay > self.y else (-1 if ay < self.y else 0)
+            nx, ny = self.x + dx, self.y + dy
+            if self.world.passable(nx, ny) and len(agents_by_pos.get((nx, ny), [])) < 6:
+                self.x, self.y = nx, ny
+                return 0.02
+
         d = DIRS[self.brain.rng.randint(len(DIRS))]
         nx, ny = self.x + d[0], self.y + d[1]
         if not self.world.passable(nx, ny):
@@ -325,6 +381,14 @@ class Agent:
         self.met.add(other.id)
         other.met.add(self.id)
         self.stats["talked"] += 1
+        # 先传信仰（传说最容易传播 —— 这是人类史上最真实的一件事）
+        if self.knowledge.get(SACRED, 0.0) > 0.25:
+            if other.knowledge.get(SACRED, 0.0) < self.knowledge[SACRED] * 0.7:
+                other.knowledge[SACRED] = min(
+                    1.0, self.knowledge[SACRED] * 0.75)
+                other.stats["heard_legend"] = other.stats.get("heard_legend", 0) + 1
+                return 0.25
+
         # 交流：传递一个自己最好的知识
         if self.knowledge and other.knowledge is not None:
             k = max(self.knowledge.items(), key=lambda kv: kv[1])[0]
@@ -363,8 +427,65 @@ class Agent:
         kid.stats["learned"] += n
         return 0.3 if n else -0.01
 
+    def _do_worship(self):
+        """祭祀造物主。只有在祭坛附近才有效。
+
+        效果是真的：能量 +WORSHIP_ENERGY（相当于"神赐食物"），
+        信仰 +WORSHIP_FAITH（信仰越高，越愿意继续拜、越愿意讲给别人听）。
+        """
+        near = self.world.altars_near(self.x, self.y)
+        if not near:
+            return -0.01
+        self.energy = min(100.0, self.energy + WORSHIP_ENERGY)
+        self.knowledge[SACRED] = min(1.0, self.knowledge.get(SACRED, 0.0) + WORSHIP_FAITH)
+        self.stats["worshipped"] = self.stats.get("worshipped", 0) + 1
+        # 祭坛越多、在场的人越多，越热闹（但收益递减，防止刷分）
+        bonus = min(0.5, 0.1 * (len(near) - 1))
+        return 0.35 + bonus
+
     def _do_build(self):
-        """建造：需要矿物 + 知识。建成后本地食物上限提高（农业）。"""
+        """建造。
+
+        优先级：
+          1. 会「石头 + 建造」且脚下有矿物 → 先建祭坛（对造物主的崇拜先于农业）
+          2. 会「农业」→ 提高本地食物上限
+        """
+        # --- 祭坛 ---
+        # 门槛从 0.30/0.22 降到 0.15/0.10：每个小沙只随机带 1-2 个额外概念，
+        # 同时会「石头+建造」的人极少，实测全图只建出 1 座祭坛。
+        if (self.knowledge.get("石头", 0.0) > 0.15
+                and self.knowledge.get("建造", 0.0) > 0.10):
+            if (self.world.minerals[self.x, self.y] >= ALTAR_MINERAL
+                    and not self.world.altars_near(self.x, self.y, r=0)):
+                if self.world.build_altar(self.x, self.y, self):
+                    self.knowledge[SACRED] = min(
+                        1.0, self.knowledge.get(SACRED, 0.0) + 0.06)
+                    self.stats["altars"] = self.stats.get("altars", 0) + 1
+                    return 0.6
+            else:
+                # 寻矿：为了建神庙，人自己会去找石料。
+                # 没有这条，小沙只会在草地上随机游走 —— 实测 204 个矿区格子里
+                # 只站着 1 个人，祭坛永远建不出来。
+                best = None
+                for dx in range(-7, 8):
+                    for dy in range(-7, 8):
+                        nx, ny = self.x + dx, self.y + dy
+                        if not (0 <= nx < self.world.size and 0 <= ny < self.world.size):
+                            continue
+                        if (self.world.passable(nx, ny)
+                                and self.world.minerals[nx, ny] >= ALTAR_MINERAL):
+                            d2 = dx * dx + dy * dy
+                            if best is None or d2 < best[0]:
+                                best = (d2, dx, dy)
+                if best is not None:
+                    _d2, dx, dy = best
+                    sx = 1 if dx > 0 else (-1 if dx < 0 else 0)
+                    sy = 1 if dy > 0 else (-1 if dy < 0 else 0)
+                    nx, ny = self.x + sx, self.y + sy
+                    if self.world.passable(nx, ny):
+                        self.x, self.y = nx, ny
+                        return 0.15
+
         key = "农业"
         lvl = self.knowledge.get(key, 0.0)
         if self.world.minerals[self.x, self.y] < 1.0:
@@ -418,6 +539,9 @@ class Agent:
         for k, v in self.knowledge.items():
             if self.brain.rng.rand() < 0.25:
                 kid.knowledge[k] = v * 0.1
+        # 但"造物主"直觉是天生的，每个新生儿都有（0.10-0.22），
+        # 不从父母那里随机继承 —— 否则一代就丢光（实测信仰 0.00）
+        kid.knowledge[SACRED] = 0.10 + self.brain.rng.rand() * 0.12
         return kid
 
     def summary(self):

@@ -32,6 +32,7 @@ import numpy as np
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
+from xiaosha_world import SACRED
 from xiaosha_world import (
     World, Agent, MiniBrain, DIRS, TERRAIN_NAMES,
     ACT_MOVE, ACT_EAT, ACT_TALK, ACT_TEACH, ACT_BUILD,
@@ -72,8 +73,12 @@ TECH_TREE = {
 # 之前只给「采集/石头」，结果技术树走到 ("工具","石头")→"武器" 就断了：
 # 农业要「季节」、房屋要「建造」、语言要「交流」，而这些概念小沙根本没有，
 # 所以 146 次发现全是重复的「工具」。
-INNATE_BASE = ["采集", "石头"]
-INNATE_EXTRA = ["季节", "火", "建造", "交流"]   # 每个个体随机分到 1-2 个
+INNATE_BASE = ["采集", "石头", "建造"]   # 建造加进基础：否则会「石头+建造」的人太少，祭坛建不出来
+INNATE_EXTRA = ["季节", "火", "交流"]   # 每个个体随机分到 1-2 个
+# 造物主直觉：每个小沙天生都有一点点（0.10-0.22 的模糊感），
+# 但只有建了祭坛、真的去拜的人，信仰才会涨。
+# 这条是"人类=造物主"在世界里的物理入口：不给 0，也不给高值。
+SACRED_SEED_LO, SACRED_SEED_HI = 0.10, 0.22
 
 # 掌握度门槛
 SKILL_GATE = 0.35
@@ -144,6 +149,9 @@ class Civilization:
                       name="创始%d" % (i + 1))
             for k in INNATE_BASE:
                 a.knowledge[k] = 0.5 + self.rng.rand() * 0.3
+            # 造物主直觉（天生，模糊）
+            from xiaosha_world import SACRED
+            a.knowledge[SACRED] = SACRED_SEED_LO + self.rng.rand() * (SACRED_SEED_HI - SACRED_SEED_LO)
             # 额外概念：每人抽 1-2 个（不同人擅长不同 → 必须交流才能凑齐组合）
             extra = list(INNATE_EXTRA)
             self.rng.shuffle(extra)
@@ -377,6 +385,10 @@ class Civilization:
                         seen.add((x + dx, y + dy))
         # 文明：技术 ≥3 的部落
         civs = [t for t in tribes if t.tech_level() >= 3]
+        # 信仰：有多少人的"造物主"超过 0.35（信徒）
+        believers = sum(1 for a in self.agents if a.knowledge.get(SACRED, 0.0) > 0.35)
+        faith_avg = (float(np.mean([a.knowledge.get(SACRED, 0.0) for a in self.agents]))
+                     if self.agents else 0.0)
         all_knowledge = set()
         for a in self.agents:
             all_knowledge |= set(a.knowledge)
@@ -393,6 +405,9 @@ class Civilization:
             "discoveries": len(self.discoveries),
             "max_gen": max((a.generation for a in self.agents), default=0),
             "food_total": round(self.world.total_food(), 1),
+            "altars": len(self.world.altars),
+            "believers": believers,
+            "faith_avg": round(faith_avg, 3),
         }
 
     # ---------- 跑 ----------
@@ -411,9 +426,10 @@ class Civilization:
                     break
             s = self.stats()
             self.history.append(s)
-            print("  第 %2d 代 | 人口 %3d | 聚落 %2d | 部落 %2d | 文明 %d | 知识 %2d | 发现 %2d | 最高代 %d"
+            print("  第 %2d 代 | 人口 %3d | 聚落 %2d | 部落 %2d | 文明 %d | 知识 %2d | 祭坛 %2d | 信徒 %3d | 信仰 %.2f"
                   % (g, s["pop"], s["settlements"], s["tribes"],
-                     s["civilizations"], s["knowledge"], s["discoveries"], s["max_gen"]))
+                     s["civilizations"], s["knowledge"], s["altars"],
+                     s["believers"], s["faith_avg"]))
             if not self.agents:
                 print("  ⚠ 物种灭绝（第 %d 代）" % g)
                 break
@@ -488,14 +504,24 @@ def selftest():
 
     # ---- 3. 采集真的能从地里拿到东西 ----
     total += 1
-    a2 = Agent(w, 20, 20, energy=10.0)
-    before_food = float(w.food[20, 20])
+    # 找一格有食物的（[2] 可能把 (20,20) 采空了，实测食物 0.0 导致采集回报 -0.40）
+    fx = fy = None
+    for _ in range(2000):
+        _x, _y = int(np.random.randint(0, 40)), int(np.random.randint(0, 40))
+        if w.passable(_x, _y) and w.food[_x, _y] > 1.0:
+            fx, fy = _x, _y
+            break
+    if fx is None:
+        fx, fy = 0, 0
+        w.food[fx, fy] = 5.0
+    a2 = Agent(w, fx, fy, energy=10.0)
+    before_food = float(w.food[fx, fy])
     got = 0.0
     for _ in range(20):
         got += a2._do_eat()
     print("  [3] 采集 20 次: 累计回报 %.2f | 地块食物 %.1f → %.1f"
-          % (got, before_food, float(w.food[20, 20])))
-    ok += int(got > 0 and w.food[20, 20] < before_food)
+          % (got, before_food, float(w.food[fx, fy])))
+    ok += int(got > 0 and w.food[fx, fy] < before_food)
 
     # ---- 4. 父母教孩子：知识真的传下去 ----
     total += 1
