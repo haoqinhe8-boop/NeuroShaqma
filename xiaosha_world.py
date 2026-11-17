@@ -50,7 +50,12 @@ SACRED = "造物主"
 ALTAR_MINERAL = 2.5       # 建一座祭坛需要的矿物（山脚 4.5 够建一座）
 WORSHIP_RANGE = 2         # 在祭坛几格内算"在祭祀"
 WORSHIP_ENERGY = 4.0      # 祭祀带来的能量（"神迹"的实际好处）
-WORSHIP_FAITH = 0.040     # 每次祭祀增加的信仰（0.012 太慢，实测 15 代没人过 0.4）
+# 祭祀不再增加信仰（原来是 0.040）。
+# 原因：只要站在祭坛边就能涨信仰，那"被说服"永远比不过"拜一拜"——
+# 实测 350 人里有 242 人信了，但传播事件 0 次：他们全是被祭坛"泡"出来的，
+# 没有一个人是被谁说服的。宗教成了环境效应，不是思想传播。
+# 现在祭祀只给能量（真实好处），信仰只能靠**别人讲给你听**。
+WORSHIP_FAITH = 0.0
 MIRACLE_ENERGY = 0.0      # 由外部（人类）降下的神迹，累积在这里
 ACTION_NAMES = {ACT_MOVE: "移动", ACT_EAT: "采集", ACT_TALK: "交流",
                 ACT_TEACH: "教学", ACT_BUILD: "建造", ACT_WORSHIP: "祭祀"}
@@ -329,7 +334,12 @@ class Agent:
             reward = -0.01
 
         # 学习（STDP + 奖励调制）
-        self.brain.learn(sp_mask, act, reward if abs(reward) > 0.05 else 0.0)
+        # 原来写的是 `reward if abs(reward) > 0.05 else 0.0`，
+        # 意思是"小失败不算数"——但大多数失败回报就是 -0.01（教学没人可教、
+        # 交流没人可说）。结果脑子里那个动作的权重永远不会被压低，
+        # 实测一个个体 200 步里 159 次死选"教学"（80%），因为它从来没学过
+        # 这个动作是没用的。现在任何非零反馈都学，失败会被真正惩罚。
+        self.brain.learn(sp_mask, act, reward if reward != 0.0 else 0.0)
         self.last_reward = reward
         self.last_sp = sp_mask
         self.age += 1
@@ -374,7 +384,16 @@ class Agent:
         return 0.5 if got > 0.5 else 0.15
 
     def _do_talk(self, agents_by_pos):
-        others = [o for o in agents_by_pos.get((self.x, self.y), []) if o is not self]
+        # 交谈范围 ±2 格，不是同一格。
+        # 实测：350 人散在 40x40=1600 格 = 0.22 人/格，要求"站在同一格"
+        # 等于永远没人能说话（累计 talk 动作 0 次，传播事件 0 次）。
+        # 真实世界里人也不是脸贴脸才叫说话。
+        others = []
+        for dx in (-2, -1, 0, 1, 2):
+            for dy in (-2, -1, 0, 1, 2):
+                for o in agents_by_pos.get((self.x + dx, self.y + dy), []):
+                    if o is not self:
+                        others.append(o)
         if not others:
             return -0.01
         other = others[self.brain.rng.randint(len(others))]
@@ -387,7 +406,12 @@ class Agent:
         from xiaosha_memetics import try_convert
         converted, new_name = try_convert(self, other, self.brain.rng)
         if converted:
-            return 0.25
+            # 传教成功的奖励从 0.25 提到 1.2。
+            # 原来 0.25 太弱：大脑学不到"说话有用"，实测先知 80% 的时间
+            # 死选"教学"（而他还没孩子，教学永远失败），移动只占 3%，
+            # 周围没人 → 576 次交流动作里没有一次成功传播。
+            # 说话能改变别人，对群居动物来说是真实的强回报。
+            return 1.2
 
         # 交流：传递一个自己最好的知识
         if self.knowledge and other.knowledge is not None:
