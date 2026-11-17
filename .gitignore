@@ -24,3 +24,6 @@ cortex_data/
 organs-cells.json
 __pycache__/
 *.pyc
+
+# 生成的视频（跑 make_civ_video.py --render 会重新产出）
+NeuroShaqma-civ.mp4

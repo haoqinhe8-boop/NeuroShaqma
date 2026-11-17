@@ -19,8 +19,14 @@ import numpy as np
 from PIL import Image, ImageDraw, ImageFont, ImageFilter
 
 W, H, FPS = 1920, 1080, 30
-PUB = r"D:\Apps\MyModel\chat\public"
-OUT = os.path.join(PUB, "NeuroShaqma-civ.mp4")
+HERE = os.path.dirname(os.path.abspath(__file__))
+# 素材查找顺序：仓库根目录（clone 下来的人用这个）→ 我本地平台的 public/
+# 原来是硬编码 D:\Apps\MyModel\chat\public，别人 clone 后 selftest 直接失败，
+# 而 README 写着"你可以自己跑一遍"——那句话就成了假的。
+_PUB_CANDIDATES = [HERE, r"D:\Apps\MyModel\chat\public"]
+PUB = next((p for p in _PUB_CANDIDATES
+            if os.path.exists(os.path.join(p, "civ-world-iso.png"))), HERE)
+OUT = os.path.join(HERE, "NeuroShaqma-civ.mp4")
 TMP = os.path.join(os.environ.get("TEMP", "."), "civ_frames")
 
 CYAN = (63, 201, 211)
