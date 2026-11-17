@@ -381,13 +381,13 @@ class Agent:
         self.met.add(other.id)
         other.met.add(self.id)
         self.stats["talked"] += 1
-        # 先传信仰（传说最容易传播 —— 这是人类史上最真实的一件事）
-        if self.knowledge.get(SACRED, 0.0) > 0.25:
-            if other.knowledge.get(SACRED, 0.0) < self.knowledge[SACRED] * 0.7:
-                other.knowledge[SACRED] = min(
-                    1.0, self.knowledge[SACRED] * 0.75)
-                other.stats["heard_legend"] = other.stats.get("heard_legend", 0) + 1
-                return 0.25
+        # 模因传播：把「造物主」这件事讲出去。
+        # 走 xiaosha_memetics.try_convert，会带语言变异（30% 改叫法），
+        # 所以「造物主」传几手之后会变成「天物主」「造物神」「上苍」等等。
+        from xiaosha_memetics import try_convert
+        converted, new_name = try_convert(self, other, self.brain.rng)
+        if converted:
+            return 0.25
 
         # 交流：传递一个自己最好的知识
         if self.knowledge and other.knowledge is not None:
@@ -422,6 +422,19 @@ class Agent:
             if kid.knowledge.get(k, 0.0) < v * 0.95:
                 kid.knowledge[k] = min(1.0, v * 0.95)     # 教学 95%（比交流完整）
                 self.knowledge[k] = min(1.0, v + 0.004)   # 教一遍自己也更熟
+                # 【关键】教学是信仰的主要传播途径（实测：总传播事件 0 次，
+                # 但信徒从 9 涨到 242 —— 全靠父母教孩子）。
+                # 所以教学时语言也必须变异，否则"造物主"永远只有一个叫法。
+                if k == SACRED:
+                    from xiaosha_memetics import Meme, _log_lineage
+                    src = getattr(self, "meme_name", SACRED)
+                    if self.brain.rng.rand() < 0.70:
+                        new_name = src
+                    else:
+                        new_name = Meme(src, rng=self.brain.rng).mutate()
+                    kid.meme_name = new_name
+                    kid.meme_origin = src
+                    _log_lineage(self, kid, new_name, self.brain.rng)
                 n += 1
         self.stats["taught"] += n
         kid.stats["learned"] += n
