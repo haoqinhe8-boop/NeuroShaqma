@@ -23,6 +23,10 @@ import sys
 
 import numpy as np
 
+from xiaosha_phenotype import (
+    Phenotype, random_genome, crossover, clamp, PHENO_GENES,
+)
+
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 __version__ = "0.1.0"
@@ -281,14 +285,22 @@ class Agent:
     _next_id = 0
 
     def __init__(self, world, x, y, genes=None, brain=None, tribe=None,
-                 energy=20.0, generation=0, parents=None, name=""):
+                 energy=20.0, generation=0, parents=None, name="", pheno=None):
         Agent._next_id += 1
         self.id = Agent._next_id
         self.name = name or ("x%d" % self.id)
         self.world = world
         self.x, self.y = int(x), int(y)
         self.genes = genes if genes is not None else {}
-        self.brain = brain if brain is not None else MiniBrain(seed=self.id)
+        # 表型：每个个体一套自己的参数（体型/代谢/视力/好奇/寿命/社交/夜行/耐心）
+        # 没传就随机生成一套 —— 所以**没有任何两个个体是一样的**。
+        self.pheno = pheno if pheno is not None else Phenotype(random_genome())
+        # 脑子也用这个个体的基因：学习率是它自己的
+        if brain is not None:
+            self.brain = brain
+        else:
+            self.brain = MiniBrain(seed=self.id)
+        self.brain.lr = float(self.pheno.learn)
         self.tribe = tribe
         self.energy = float(energy)
         self.age = 0
@@ -354,7 +366,8 @@ class Agent:
         # 所以它会带着同一个偏好活到死 —— 会种地的人从不选"建造"，农业永远用不上。
         # ε-greedy 是强化学习的标准探索项，在动物身上也真实存在（行为变异/试错），
         # 它保证每个动作都会被采到，学习才有输入。
-        if self.brain.rng.rand() < EXPLORE_EPS:
+        # 探索率是**每个个体自己的**（好奇基因），不再是全局常量
+        if self.brain.rng.rand() < self.pheno.eps:
             act = int(self.brain.rng.randint(scores.size))
         else:
             act = int(np.argmax(scores))
@@ -386,7 +399,8 @@ class Agent:
         self.last_sp = sp_mask
         self.age += 1
         # 基础代谢
-        self.energy -= 0.35
+        # 每步能耗由体型和代谢决定：大个子+快代谢=吃得多
+        self.energy -= 0.35 * (self.pheno.metab_cost / 0.39)
         return ACTION_NAMES[act]
 
     def _do_move(self, agents_by_pos):
@@ -414,7 +428,7 @@ class Agent:
         return 0.01
 
     def _do_eat(self):
-        got = self.world.harvest(self.x, self.y, amount=2.0)
+        got = self.world.harvest(self.x, self.y, amount=2.0 * self.pheno.harvest_mult)
         if got <= 0:
             return -0.02
         self.energy = min(100.0, self.energy + got * 3.0)
@@ -615,7 +629,7 @@ class Agent:
         实测第 2 代可繁殖人数从 88 暴跌到 15（全体超龄），
         新生代还没长大就断代灭绝。260 步能覆盖 4 代，种群才稳定。
         """
-        return self.energy > 55.0 and self.age > 40 and self.age < 260
+        return self.energy > 55.0 and self.age > 40 and self.age < self.pheno.life
 
     def reproduce(self, partner, generation, mutation_rate=0.05):
         """有性生殖：基因交叉 + 大脑结构继承 + 知识部分继承。"""
@@ -634,13 +648,20 @@ class Agent:
         mask = self.brain.rng.rand(self.brain.n, MiniBrain.N_OUT) < 0.5
         brain.w_out = np.where(mask, self.brain.w_out, partner.brain.w_out).astype(np.float32)
 
+        # 表型：从父母的基因组交叉 + 突变。
+        # 这是"每个个体都不一样"能延续下去的关键 —— 没有这一步，
+        # 新生个体又会退回同一套随机参数，父子之间毫无关系。
+        child_genome = crossover(self.pheno.genome, partner.pheno.genome,
+                                 rng=self.brain.rng, mutation=0.18)
+        child_pheno = Phenotype(child_genome)
+
         energy_cost = 18.0
         self.energy -= energy_cost / 2
         partner.energy -= energy_cost / 2
 
         kid = Agent(self.world, self.x, self.y, genes=child_genes, brain=brain,
                     tribe=self.tribe, energy=18.0, generation=generation,
-                    parents=[self.id, partner.id],
+                    parents=[self.id, partner.id], pheno=child_pheno,
                     name="g%d_%d" % (generation, Agent._next_id + 1))
         # 知识：孩子只继承一点点（文化靠教，不靠血脉）
         for k, v in self.knowledge.items():
