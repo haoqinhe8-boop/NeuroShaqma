@@ -569,7 +569,7 @@ def selftest():
 
     # ---- 2. 个体能行动、能量会变 ----
     total += 1
-    a = Agent(w, *[i for i in range(40) if w.passable(i, 20)][:1] * 2 if False else (20, 20), energy=30.0)
+    a = Agent(w, 20, 20, energy=30.0)
     e0 = a.energy
     for _ in range(10):
         a.act({(a.x, a.y): [a]}, [])
