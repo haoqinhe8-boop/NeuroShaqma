@@ -27,3 +27,7 @@ __pycache__/
 
 # 生成的视频（跑 make_civ_video.py --render 会重新产出）
 NeuroShaqma-civ.mp4
+
+# 个人文件与本机素材**不写在这里** —— 这个文件是公开的，
+# 写进去等于把私人文件名泄露到 GitHub。
+# 那几条放在 .git/info/exclude（只在本机生效，永不推送）。
