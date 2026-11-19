@@ -23,6 +23,7 @@ import sys
 
 import numpy as np
 
+from xiaosha_concepts import has_props
 from xiaosha_phenotype import (
     Phenotype, random_genome, crossover, clamp, PHENO_GENES,
 )
@@ -588,9 +589,10 @@ class Agent:
         实测耕地格数一直是 0，余粮不出现，国家也就无从谈起。
         现在按熟练度选：两个都会的人大部分时间务农，三分之一时间还去盖庙。
         """
-        can_altar = (self.knowledge.get("石头", 0.0) > 0.15
-                     and self.knowledge.get("建造", 0.0) > 0.10)
-        can_farm = self.knowledge.get("农业", 0.0) >= 0.3
+        can_altar = (has_props(self.knowledge, {"硬"}) is not None
+                     and has_props(self.knowledge, {"承重"}) is not None)
+        _farm_c = has_props(self.knowledge, {"可食", "周期"})
+        can_farm = _farm_c is not None and self.knowledge.get(_farm_c.name, 0.0) >= 0.3
 
         if can_altar and can_farm:
             first_farm = self.brain.rng.rand() < 0.65
@@ -605,8 +607,11 @@ class Agent:
 
     def _try_altar(self):
         """建祭坛，或者为了建祭坛去找矿。做不到返回 None（交给别的技能）。"""
-        if not (self.knowledge.get("石头", 0.0) > 0.15
-                and self.knowledge.get("建造", 0.0) > 0.10):
+        # 建祭坛要会两件事：有硬的材料、有能当结构的东西。
+        # 同样按属性问，不看名字叫"石头"还是"砖石"。
+        hard = has_props(self.knowledge, {"硬"})
+        build = has_props(self.knowledge, {"承重"})
+        if hard is None or build is None:
             return None
         if (self.world.minerals[self.x, self.y] >= ALTAR_MINERAL
                 and not self.world.altars_near(self.x, self.y, r=0)):
@@ -652,7 +657,13 @@ class Agent:
 
     def _try_farm(self):
         """把脚下和周围 8 格垦成耕地。不会农业返回 None。"""
-        key = "农业"
+        # 会不会种地，看的是"有没有一个 可食+周期 的概念"，
+        # 不是名片上写没写"农业"。所以以后小沙自己发明出
+        # "洋芋种植"之类的东西，只要属性对，立刻就能种。
+        concept = has_props(self.knowledge, {"可食", "周期"})
+        if concept is None:
+            return None
+        key = concept.name
         lvl = self.knowledge.get(key, 0.0)
         if lvl < 0.3:
             return None

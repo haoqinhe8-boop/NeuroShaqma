@@ -30,6 +30,11 @@ from collections import Counter, defaultdict
 
 import numpy as np
 
+from xiaosha_concepts import (
+    INNATE as CONCEPT_POOL, INNATE_DRAW, combine, get as get_concept,
+    register as register_concept, has_props, MAX_HELD,
+)
+
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from xiaosha_world import SACRED, neighbours
@@ -149,16 +154,17 @@ class Civilization:
             a = Agent(self.world, pos[0], pos[1], energy=28.0 + self.rng.rand() * 10,
                       genes={"plasticity": self.rng.rand()},
                       name="创始%d" % (i + 1))
-            for k in INNATE_BASE:
+            # 出生池随机抽 4-5 个（不是全给）——
+            # 所以一开始每个人都缺东西，必须互相教才凑得齐组合。
+            pool = list(CONCEPT_POOL)
+            self.rng.shuffle(pool)
+            n0 = int(self.rng.randint(INNATE_DRAW[0], INNATE_DRAW[1] + 1))
+            for k in pool[:n0]:
                 a.knowledge[k] = 0.5 + self.rng.rand() * 0.3
             # 造物主直觉（天生，模糊）
             from xiaosha_world import SACRED
             a.knowledge[SACRED] = SACRED_SEED_LO + self.rng.rand() * (SACRED_SEED_HI - SACRED_SEED_LO)
-            # 额外概念：每人抽 1-2 个（不同人擅长不同 → 必须交流才能凑齐组合）
-            extra = list(INNATE_EXTRA)
-            self.rng.shuffle(extra)
-            for k in extra[:1 + self.rng.randint(2)]:
-                a.knowledge[k] = 0.45 + self.rng.rand() * 0.3
+            # （原来这里再抽 1-2 个 INNATE_EXTRA，现在整池随机已经覆盖）
             self.agents.append(a)
 
     def _random_land(self, tries=200):
@@ -281,19 +287,39 @@ class Civilization:
         p = 0.004 * (1.0 + min(3.0, len(skilled) / 4.0))
         if self.rng.rand() >= p:
             return
-        # 随机挑一对
-        i, j = self.rng.choice(len(skilled), 2, replace=False)
-        pair = (skilled[i], skilled[j])
-        tech = TECH_TREE.get(pair) or TECH_TREE.get((pair[1], pair[0]))
-        if tech is None or tech in agent.knowledge:
+        # 随机挑一对，试着组合。
+        #
+        # 这里不再查 TECH_TREE（24 条手写物品对），而是问概念系统：
+        # 这两个东西的属性凑在一起，物理上会不会多出新能力。
+        # 结果由属性算出，不是我列的清单。
+        i = self.rng.randint(len(skilled))
+        j = self.rng.randint(len(skilled) - 1)
+        if j >= i:
+            j += 1
+        na, nb = skilled[i], skilled[j]
+        ca, cb = get_concept(na), get_concept(nb)
+        if ca is None or cb is None:
             return
+        newc = combine(ca, cb)
+        if newc is None:
+            return
+        tech = newc.name
+        if tech in agent.knowledge:
+            return
+        if len(agent.knowledge) >= MAX_HELD:
+            return
+        if tech not in [k for k in agent.knowledge]:
+            # 概念库要认识它，后面按属性判断才能用
+            if get_concept(tech) is None:
+                register_concept(newc)
         agent.knowledge[tech] = 0.35 + self.rng.rand() * 0.2
         rec = {"gen": self.generation, "step": self.step_count,
-               "who": agent.name, "tech": tech, "from": pair}
+               "who": agent.name, "tech": tech, "from": (na, nb),
+               "props": sorted(newc.props)}
         self.discoveries.append(rec)
         if self.verbose:
-            print("      ✦ %s 发现了「%s」（%s + %s）"
-                  % (agent.name, tech, pair[0], pair[1]))
+            print("      ✦ %s 组合出了「%s」（%s + %s → %s）"
+                  % (agent.name, tech, na, nb, "+".join(sorted(newc.props))))
 
     # ---------- 繁殖 ----------
     def _reproduce(self):
