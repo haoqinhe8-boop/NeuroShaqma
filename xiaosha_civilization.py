@@ -308,10 +308,8 @@ class Civilization:
             return
         if len(agent.knowledge) >= MAX_HELD:
             return
-        if tech not in [k for k in agent.knowledge]:
-            # 概念库要认识它，后面按属性判断才能用
-            if get_concept(tech) is None:
-                register_concept(newc)
+        if get_concept(tech) is None:
+            register_concept(newc)   # 概念库要认识它，后面按属性判断才用得上
         agent.knowledge[tech] = 0.35 + self.rng.rand() * 0.2
         rec = {"gen": self.generation, "step": self.step_count,
                "who": agent.name, "tech": tech, "from": (na, nb),

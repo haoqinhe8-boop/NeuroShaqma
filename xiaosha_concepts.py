@@ -211,9 +211,9 @@ def _generic_name(props):
     return "复合(%s)" % "".join(PROP_ABBR[p] for p in PROP_ORDER if p in props)
 
 
-def _name_for(props, generic_only=False):
+def _name_for(props):
     key = frozenset(props)
-    if not generic_only and key in ARCHETYPES:
+    if key in ARCHETYPES:
         return ARCHETYPES[key], False
     return _generic_name(props), True
 
@@ -240,7 +240,7 @@ def _boot():
 _boot()
 
 
-def combine(a, b, allow_generic=True):
+def combine(a, b):
     """两个概念试着合起来。成立返回新的 Concept，不成立返回 None。
 
     成立的条件（三条，都是物理性的，不是剧本）：
@@ -290,8 +290,6 @@ def combine(a, b, allow_generic=True):
             return None
     else:
         name, generic = _name_for(merged)
-        if generic and not allow_generic:
-            return None
 
     if not coherent(merged) or len(merged) > MAX_PROPS:
         return None
@@ -456,8 +454,6 @@ if __name__ == "__main__":
     ok = selftest()
 
     print("\n=== 从出生池穷举长出来的全部概念 ===")
-    if "collect" in dir():
-        pass
     allc = grow_all()
     by_tier = {}
     for c in allc:
