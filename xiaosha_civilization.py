@@ -122,9 +122,11 @@ class Civilization:
     """地球 Online 主循环。"""
 
     def __init__(self, size=60, n_agents=120, seed=42,
-                 food_rate=1.0, mutation_rate=0.06, verbose=False):
+                 food_rate=1.0, mutation_rate=0.06, verbose=False, world=None):
         self.rng = np.random.RandomState(seed)
-        self.world = World(size=size, seed=seed)
+        # world 可以外部传入（球面版 GlobeWorld 就是这么接进来的）；
+        # 不传就还是原来的 40x40 平地，向后兼容。
+        self.world = world if world is not None else World(size=size, seed=seed)
         self.verbose = verbose
         self.food_rate = float(food_rate)     # 资源丰富度（环境压力旋钮）
         self.mutation_rate = float(mutation_rate)

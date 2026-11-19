@@ -181,7 +181,14 @@ class Planet:
 
         这是真实的球面日照：太阳正对一条经线，那一侧是白天；
         两极在夏天会极昼、冬天会极夜（因为赤纬超过了 90-|lat|）。
+
+        按 step_count 缓存：这个函数每个时间步只该算一次。
+        不缓存的话，个体每走一步都调 light_at()，就要重算一整张 N×N 的图 ——
+        350 个体 × 60 步 = 每代 2.1 万次全图计算，30 代直接跑了 339 秒。
         """
+        sc = self.step_count
+        if getattr(self, "_light_step", None) == sc:
+            return self._light_cache
         decl = self.declination()
         la = np.deg2rad(self.lat)[:, None]
         lo = np.deg2rad(self.lon)[None, :]
@@ -191,7 +198,10 @@ class Planet:
         sin_h = (np.sin(la) * np.sin(d)
                  + np.cos(la) * np.cos(d) * np.cos(lo - sun))
         # 映射到 0-1：地平线以上就算白天，越接近直射越亮
-        return np.clip(sin_h * 1.6 + 0.15, 0.0, 1.0).astype(np.float32)
+        arr = np.clip(sin_h * 1.6 + 0.15, 0.0, 1.0).astype(np.float32)
+        self._light_cache = arr
+        self._light_step = sc
+        return arr
 
     def season(self):
         """北半球季节名（南半球相反）。"""

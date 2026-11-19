@@ -144,6 +144,22 @@ class World:
         self.miracles = getattr(self, "miracles", 0) + 1
         return n
 
+    def can_farm(self, x, y):
+        """这块地能不能种（陆地且可通行）。"""
+        return bool(PASSABLE.get(int(self.terrain[x, y]), False))
+
+    def natural_food(self, x, y):
+        """这块地的自然承载力（不考虑种地加成）。"""
+        return float(MAX_FOOD.get(int(self.terrain[x, y]), 6.0))
+
+    def food_norm(self, x, y):
+        """这一格食物归一化用的分母（agent 感知用的是 食物/上限）。
+
+        平原和球面的地形编号完全不同（平原 4 种、球面 7 种），
+        所以不能各自去查同一张 MAX_FOOD 表 —— 让世界自己回答。
+        """
+        return MAX_FOOD.get(int(self.terrain[x, y]), 6.0)
+
     def passable(self, x, y):
         if not (0 <= x < self.size and 0 <= y < self.size):
             return False
@@ -322,24 +338,47 @@ class Agent:
     def perceive(self, agents_by_pos):
         obs = np.zeros(MiniBrain.N_IN, dtype=np.float32)
         # 0-7 周围 8 格食物
+        #
+        # 注意两件事：
+        # 1) 球面世界里 nx 会绕过去（x=size 就是 x=0），所以坐标要先归一化；
+        # 2) 地形编号各不相同（平原 4 种、球面 7 种），不能用同一张 MAX_FOOD 表查，
+        #    否则球面的"山地(6)"在平原表里直接 KeyError。
+        #    改成问世界要"这格的归一化上限"。
+        norm = getattr(self.world, "food_norm", None)
+        has_norm = hasattr(self.world, "normalize")
         for i, (dx, dy) in enumerate(DIRS):
             nx, ny = self.x + dx, self.y + dy
-            if 0 <= nx < self.world.size and 0 <= ny < self.world.size:
-                mx = MAX_FOOD[int(self.world.terrain[nx, ny])]
-                obs[i] = min(1.0, self.world.food[nx, ny] / max(mx, 1e-9))
+            if has_norm:
+                nx, ny = self.world.normalize(nx, ny)
+            elif not (0 <= nx < self.world.size and 0 <= ny < self.world.size):
+                continue
+            if norm is not None:
+                mx = norm(nx, ny)
+            else:
+                mx = MAX_FOOD.get(int(self.world.terrain[nx, ny]), 6.0)
+            obs[i] = min(1.0, self.world.food[nx, ny] / max(mx, 1e-9))
         # 8-11 邻居密度（四象限）
+        # 只看 ±2 格的 5x5 窗口，不要遍历 agents_by_pos 的所有位置 ——
+        # 原来是 for (...) in agents_by_pos.items()，350 个个体时每个个体每步
+        # 都要扫 350 个位置，一代就是 700 万次比较，是球面版跑 30 代要 339 秒的主因。
         n_near = [0, 0, 0, 0]
         n_in_tribe = 0
-        for (ax, ay), others in agents_by_pos.items():
-            if (ax, ay) == (self.x, self.y):
-                continue
-            d = max(abs(ax - self.x), abs(ay - self.y))
-            if d > 2:
-                continue
-            q = (0 if ax <= self.x else 1) + (0 if ay <= self.y else 2)
-            n_near[q] += len(others)
-            if self.tribe is not None and any(o.tribe is self.tribe for o in others):
-                n_in_tribe += 1
+        for dx in range(-2, 3):
+            for dy in range(-2, 3):
+                if dx == 0 and dy == 0:
+                    continue
+                ax, ay = self.x + dx, self.y + dy
+                if has_norm:
+                    ax, ay = self.world.normalize(ax, ay)
+                elif not (0 <= ax < self.world.size and 0 <= ay < self.world.size):
+                    continue
+                others = agents_by_pos.get((ax, ay))
+                if not others:
+                    continue
+                q = (0 if dx < 0 else 1) + (0 if dy < 0 else 2)
+                n_near[q] += len(others)
+                if self.tribe is not None and any(o.tribe is self.tribe for o in others):
+                    n_in_tribe += 1
         obs[8:12] = np.clip(np.array(n_near, dtype=np.float32) / 5.0, 0, 1)
         # 12 能量
         obs[12] = float(np.clip(self.energy / 60.0, 0, 1))
@@ -398,9 +437,19 @@ class Agent:
         self.last_reward = reward
         self.last_sp = sp_mask
         self.age += 1
-        # 基础代谢
-        # 每步能耗由体型和代谢决定：大个子+快代谢=吃得多
-        self.energy -= 0.35 * (self.pheno.metab_cost / 0.39)
+
+        # 球面世界：移动可能越界，这里把坐标折回（经度环绕、纬度钳制）。
+        # 平原世界没有 normalize，这一步自动跳过。
+        if hasattr(self.world, "normalize"):
+            self.x, self.y = self.world.normalize(self.x, self.y)
+            light = self.world.light_at(self.x, self.y)
+        else:
+            light = 1.0
+
+        # 基础代谢 × 活跃度：睡着的人省能量，跑动的人费能量。
+        # 夜色对昼行个体 = 休息，能耗降到 0.55 倍；对夜行个体则相反。
+        act_level = self.pheno.activity(light)
+        self.energy -= 0.35 * (self.pheno.metab_cost / 0.39) * (0.55 + 0.45 * act_level)
         return ACTION_NAMES[act]
 
     def _do_move(self, agents_by_pos):
@@ -428,7 +477,11 @@ class Agent:
         return 0.01
 
     def _do_eat(self):
-        got = self.world.harvest(self.x, self.y, amount=2.0 * self.pheno.harvest_mult)
+        # 采集效率受光照影响：黑夜里几乎拿不到东西（球面昼夜是真的）
+        light = self.world.light_at(self.x, self.y) if hasattr(self.world, "light_at") else 1.0
+        eff = 0.15 + 0.85 * self.pheno.activity(light)
+        got = self.world.harvest(self.x, self.y,
+                                 amount=2.0 * self.pheno.harvest_mult * eff)
         if got <= 0:
             return -0.02
         self.energy = min(100.0, self.energy + got * 3.0)
@@ -566,20 +619,29 @@ class Agent:
         # 寻矿：为了建神庙，人自己会去找石料。
         # 没有这条，小沙只会在草地上随机游走 —— 实测 204 个矿区格子里
         # 只站着 1 个人，祭坛永远建不出来。
-        best = None
-        for dx in range(-7, 8):
-            for dy in range(-7, 8):
-                nx, ny = self.x + dx, self.y + dy
-                if not (0 <= nx < self.world.size and 0 <= ny < self.world.size):
-                    continue
-                if (self.world.passable(nx, ny)
-                        and self.world.minerals[nx, ny] >= ALTAR_MINERAL):
-                    d2 = dx * dx + dy * dy
-                    if best is None or d2 < best[0]:
-                        best = (d2, dx, dy)
-        if best is None:
-            return None
-        _d2, dx, dy = best
+        # 世界若能直接给出最近的矿就用它（球面版预计算过矿区列表，
+        # 比扫 15x15 快两个数量级）；否则退回扫描。
+        near_fn = getattr(self.world, "nearest_ore", None)
+        if near_fn is not None:
+            got = near_fn(self.x, self.y)
+            if got is None:
+                return None
+            dx, dy = got
+        else:
+            best = None
+            for dx in range(-7, 8):
+                for dy in range(-7, 8):
+                    nx, ny = self.x + dx, self.y + dy
+                    if not (0 <= nx < self.world.size and 0 <= ny < self.world.size):
+                        continue
+                    if (self.world.passable(nx, ny)
+                            and self.world.minerals[nx, ny] >= ALTAR_MINERAL):
+                        d2 = dx * dx + dy * dy
+                        if best is None or d2 < best[0]:
+                            best = (d2, dx, dy)
+            if best is None:
+                return None
+            _d2, dx, dy = best
         sx = 1 if dx > 0 else (-1 if dx < 0 else 0)
         sy = 1 if dy > 0 else (-1 if dy < 0 else 0)
         nx, ny = self.x + sx, self.y + sy
@@ -594,21 +656,24 @@ class Agent:
         lvl = self.knowledge.get(key, 0.0)
         if lvl < 0.3:
             return None
-        t = int(self.world.terrain[self.x, self.y])
-        if t in (WATER, MOUNTAIN):
+        # 平原 4 种地形、球面 7 种，编号完全不同，不能直接比 WATER/MOUNTAIN 常量
+        if not self.world.can_farm(self.x, self.y):
             return None
         # 种地要的是土地，不是石头 —— 原来要求"脚下有矿物 >= 1.0"，
         # 于是只有站在山脚的人能种地，种一次还得挖走一块石头，不合常理。
         # 一个人耕不了整片地，但一片田能养活一家人 —— 这就是"余粮"的来源。
-        natural = float(MAX_FOOD[t])
+        natural = self.world.natural_food(self.x, self.y)
         cap_max = natural * (1.0 + FARM_MAX_BOOST * lvl)
         n = 0
+        has_norm = hasattr(self.world, "normalize")
         for dx in range(-1, 2):
             for dy in range(-1, 2):
                 nx, ny = self.x + dx, self.y + dy
-                if not (0 <= nx < self.world.size and 0 <= ny < self.world.size):
+                if has_norm:
+                    nx, ny = self.world.normalize(nx, ny)
+                elif not (0 <= nx < self.world.size and 0 <= ny < self.world.size):
                     continue
-                if int(self.world.terrain[nx, ny]) in (WATER, MOUNTAIN):
+                if not self.world.can_farm(nx, ny):
                     continue
                 self.world.farm_cap[nx, ny] = min(
                     cap_max, self.world.farm_cap[nx, ny] + FARM_STEP * lvl)
