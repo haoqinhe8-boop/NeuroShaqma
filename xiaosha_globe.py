@@ -466,17 +466,14 @@ def selftest():
 
 
 if __name__ == "__main__":
-    if "--selftest" in sys.argv:
-        sys.exit(0 if selftest() else 1)
-    if len(sys.argv) > 1:
-        g = int(sys.argv[1])
-        p = int(sys.argv[2]) if len(sys.argv) > 2 else 160
-        main(gens=g, pop=p)
-    else:
+    # 默认只跑自测（几秒钟）。要跑几十代的长任务，必须显式给代数：
+    #     python xiaosha_globe.py 30 160
+    # 这是本仓库的约定（make_civ_video 也是这样）：
+    # 否则每次全量测试都会白跑几十代，把测试从 7 分钟拖到 20 分钟。
+    args = [a for a in sys.argv[1:] if not a.startswith("-")]
+    if not args:
         print("=" * 84)
         print("小沙的地球 · 球面文明")
         print("=" * 84)
-        ok = selftest()
-        print()
-        main(gens=30, pop=160)
-        sys.exit(0 if ok else 1)
+        sys.exit(0 if selftest() else 1)
+    main(gens=int(args[0]), pop=int(args[1]) if len(args) > 1 else 160)
