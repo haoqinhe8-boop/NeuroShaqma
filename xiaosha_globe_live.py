@@ -37,7 +37,35 @@ def _r2(v):
     return int(round(float(v) * 100))
 
 
+LOCK = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".globe-live.pid")
+
+
+def _claim_single_instance():
+    """单实例护栏：同一个世界只能有一个直播生产者。
+
+    实测踩过两次同类的坑：
+      · fix-proxy 没有护栏，9 天攒了 400 个并发实例（整机掉帧）
+      · 这个直播生产者留过 2 个，等于两份模拟在跑、双倍 CPU
+    做法：写自己的 PID 到锁文件；如果文件里那个 PID 还活着且不是自己，
+    直接把它干掉再接管 —— 进程退不干净时也能自愈。
+    """
+    me = os.getpid()
+    try:
+        if os.path.exists(LOCK):
+            old = int(open(LOCK).read().strip() or 0)
+            if old and old != me:
+                try:
+                    os.kill(old, 9)
+                    print("[globe-live] 接管：结束了遗留实例 PID %d" % old, file=sys.stderr)
+                except (OSError, ProcessLookupError):
+                    pass
+        open(LOCK, "w").write(str(me))
+    except Exception:
+        pass
+
+
 def main(size=80, pop=250, fps=15.0, steps_per_frame=1, seed=20261120):
+    _claim_single_instance()
     np.random.seed(seed)
     civ = LaborCivilization(size=size, n_agents=pop, seed=seed, verbose=False)
     w = civ.world
