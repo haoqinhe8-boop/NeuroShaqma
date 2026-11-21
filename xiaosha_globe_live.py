@@ -26,7 +26,8 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 
 # 用带「圆梦」的文明：祭拜要努力+人品+诚意才给，不白给饭
-from xiaosha_miracle import MiracleCivilization
+# 最终版：圆梦 + 劳动光荣（干活的人有声望，有声望的人说话有人听）
+from xiaosha_labor import LaborCivilization
 from xiaosha_planet import TERRAIN_NAMES
 
 __version__ = "1.0.0"
@@ -38,7 +39,7 @@ def _r2(v):
 
 def main(size=80, pop=250, fps=15.0, steps_per_frame=1, seed=20261120):
     np.random.seed(seed)
-    civ = MiracleCivilization(size=size, n_agents=pop, seed=seed, verbose=False)
+    civ = LaborCivilization(size=size, n_agents=pop, seed=seed, verbose=False)
     w = civ.world
     p = w.planet
     gen_steps = 60
@@ -82,6 +83,11 @@ def main(size=80, pop=250, fps=15.0, steps_per_frame=1, seed=20261120):
             "dc": round(float(p.declination()), 1),
             "n": len(ag), "f": round(w.total_food(), 1),
             "k": len(known), "t": len(civ.tribes),
+            "bl": round(100.0 * sum(1 for a in civ.agents
+                                    if getattr(a, "glory", 0.0) > 0.5)
+                        / max(1, len(civ.agents)), 1),
+            "pb": round(float(np.mean([getattr(a, "prestige", 0.0)
+                                       for a in civ.agents])) if civ.agents else 0.0, 1),
             "dr": len(getattr(civ, "dreams", [])),
             "dl": (getattr(civ, "dreams", [])[-1]["dream"] if getattr(civ, "dreams", []) else ""),
             "a": [[int(a.x), int(a.y), _r2(a.pheno.size), _r2(a.pheno.night),

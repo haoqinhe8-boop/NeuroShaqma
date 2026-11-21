@@ -57,6 +57,11 @@ FARM_MAX_BOOST = 1.2     # 农业满级时，耕地承载力最多是自然的 2
 FARM_STEP = 0.25         # 每耕一次抬高多少（乘农业熟练度）
 ALTAR_MINERAL = 2.5       # 建一座祭坛需要的矿物（山脚 4.5 够建一座）
 WORSHIP_RANGE = 2         # 在祭坛几格内算"在祭祀"
+# 「劳动光荣」被内化之后，干活的内在回报放大多少。
+# 见 xiaosha_labor.py：这不是白给的加成，是干出成绩、或被有声望的人
+# 说服之后才会有的价值，而且它真的改变大脑的选择。
+GLORY_BOOST = 0.8
+
 # 祭祀只给一点点能量（0.4），不再是白给饭。
 # 原来是 4.0，注释写着"神赐食物"——结果实测 59.7% 的人在拜神，
 # 只有 22% 在采集：大脑学会的最省力活法就是站祭坛边上换饭吃。
@@ -440,6 +445,14 @@ class Agent:
             reward = self._do_worship()
         else:
             reward = -0.01
+
+        # 「劳动光荣」是一个能被内化的价值：信它的个体，采集和建造的内在
+        # 回报更高，脑子就更愿意选劳动。glory 由 xiaosha_labor.py 维护
+        # （亲眼干出来的，或者被有声望的人说服的）—— 这里只让它真的影响学习。
+        # 默认没有 glory 属性，不影响原有行为。
+        _glory = getattr(self, "glory", 0.0)
+        if _glory > 0.0 and act in (ACT_EAT, ACT_BUILD):
+            reward *= (1.0 + GLORY_BOOST * _glory)
 
         # 学习（STDP + 奖励调制）
         # 注意：以前是 `reward if abs(reward) > 0.05 else 0.0`，等于"小失败不算数"。
