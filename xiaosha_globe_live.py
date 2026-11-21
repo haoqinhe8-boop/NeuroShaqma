@@ -60,10 +60,19 @@ def main(size=80, pop=250, fps=15.0, steps_per_frame=1, seed=20261120):
         if civ.step_count % gen_steps == 0:
             civ.generation += 1
 
+        # 发现记录会无限增长：每帧都可能 append 一条，跑 15.8 小时后涨到 436MB。
+        # 直播只需要"世界上现在有什么概念"，历史列表留着没用，裁到最近 2000 条。
+        if len(civ.discoveries) > 2000:
+            del civ.discoveries[:-2000]
+
         ag = civ.agents
         known = set()
+        acts = [0, 0, 0, 0, 0, 0]        # 移动/采集/交流/教学/建造/祭祀
         for a in ag:
             known.update(a.knowledge)
+            la = getattr(a, "last_act", -1)
+            if 0 <= la < 6:
+                acts[la] += 1
 
         frame = {
             "type": "frame", "i": frame_no, "g": civ.generation,
@@ -72,7 +81,9 @@ def main(size=80, pop=250, fps=15.0, steps_per_frame=1, seed=20261120):
             "dc": round(float(p.declination()), 1),
             "n": len(ag), "f": round(w.total_food(), 1),
             "k": len(known), "t": len(civ.tribes),
-            "a": [[int(a.x), int(a.y), _r2(a.pheno.size), _r2(a.pheno.night)] for a in ag],
+            "a": [[int(a.x), int(a.y), _r2(a.pheno.size), _r2(a.pheno.night),
+                   int(getattr(a, "last_act", -1))] for a in ag],
+            "ac": acts,
             "al": [[int(ax), int(ay)] for (ax, ay, _b, _g) in w.altars],
         }
         out.write(json.dumps(frame, ensure_ascii=False, separators=(",", ":")) + "\n")

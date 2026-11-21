@@ -437,6 +437,8 @@ class Agent:
         self.brain.learn(sp_mask, act, reward)
         self.last_reward = reward
         self.last_sp = sp_mask
+        # 记下这一步选的是哪个动作 —— 实时直播靠它显示"此刻在干什么"
+        self.last_act = int(act)
         self.age += 1
 
         # 球面世界：移动可能越界，这里把坐标折回（经度环绕、纬度钳制）。
