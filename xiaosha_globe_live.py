@@ -25,7 +25,8 @@ import numpy as np
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 
-from xiaosha_globe import GlobeCivilization
+# 用带「圆梦」的文明：祭拜要努力+人品+诚意才给，不白给饭
+from xiaosha_miracle import MiracleCivilization
 from xiaosha_planet import TERRAIN_NAMES
 
 __version__ = "1.0.0"
@@ -37,7 +38,7 @@ def _r2(v):
 
 def main(size=80, pop=250, fps=15.0, steps_per_frame=1, seed=20261120):
     np.random.seed(seed)
-    civ = GlobeCivilization(size=size, n_agents=pop, seed=seed, verbose=False)
+    civ = MiracleCivilization(size=size, n_agents=pop, seed=seed, verbose=False)
     w = civ.world
     p = w.planet
     gen_steps = 60
@@ -81,6 +82,8 @@ def main(size=80, pop=250, fps=15.0, steps_per_frame=1, seed=20261120):
             "dc": round(float(p.declination()), 1),
             "n": len(ag), "f": round(w.total_food(), 1),
             "k": len(known), "t": len(civ.tribes),
+            "dr": len(getattr(civ, "dreams", [])),
+            "dl": (getattr(civ, "dreams", [])[-1]["dream"] if getattr(civ, "dreams", []) else ""),
             "a": [[int(a.x), int(a.y), _r2(a.pheno.size), _r2(a.pheno.night),
                    int(getattr(a, "last_act", -1))] for a in ag],
             "ac": acts,
