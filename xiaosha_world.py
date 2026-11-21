@@ -394,6 +394,14 @@ class Agent:
     # ---------- 行动 ----------
     def act(self, agents_by_pos, tribes, mutation_rate=0.05):
         """感知 → 决策 → 执行。返回动作名。"""
+        # 开头先归一化一次。
+        # 归一化原来只放在结尾，但动作执行**过程中**坐标就可能越界：
+        # _try_altar 找矿时会先走一步（x = size-1 再 +1 = size），
+        # 同一轮里紧接着 minerals[x, y] 就 IndexError。
+        # 实测在 80x80 的世界里跑几十步就崩 —— 实时直播正好是 80x80。
+        if hasattr(self.world, "normalize"):
+            self.x, self.y = self.world.normalize(self.x, self.y)
+
         obs = self.perceive(agents_by_pos)
         scores = self.brain.forward(obs)
         # 加一点随机探索
